@@ -1,9 +1,30 @@
 global:
   scrape_interval: 2s
   evaluation_interval: 2s
+  external_labels:
+    app: the-gallery
 
 scrape_configs:
   - job_name: the-gallery
     metrics_path: /metrics
     static_configs:
       - targets: ["host.docker.internal:8042"]
+
+# Ship metrics up to Grafana Cloud.
+#
+# Grafana Cloud cannot scrape a local process — there is no route from their
+# network to your laptop — so the local Prometheus scrapes and forwards. Fill
+# these from Grafana Cloud → Connections → Data sources → your Prometheus
+# stack, or Home → Stack → Prometheus → "Send Metrics".
+#
+# Leave the block commented out to run entirely local.
+#
+# remote_write:
+#   - url: https://prometheus-prod-XX-prod-YY-ZZZZ.grafana.net/api/prom/push
+#     basic_auth:
+#       username: "YOUR_METRICS_INSTANCE_ID"   # a number, e.g. 1234567
+#       password: "YOUR_CLOUD_ACCESS_POLICY_TOKEN"
+#     write_relabel_configs:
+#       - source_labels: [__name__]
+#         regex: "gallery_.*"
+#         action: keep

@@ -116,6 +116,37 @@ and says so in the header — the agent stack is identical either way.
 
 ---
 
+## Deploying to Cloud Run
+
+```bash
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+./scripts/deploy-cloudrun.sh
+```
+
+The script enables the required APIs, stores `GOOGLE_API_KEY` and
+`GRAFANA_TOKEN` in Secret Manager, grants the runtime service account access,
+and deploys. Three flags are load-bearing:
+
+| Flag | Why |
+|---|---|
+| `--min-instances 1` | The race loop must keep running between requests |
+| `--no-cpu-throttling` | Cloud Run parks CPU outside request handling by default, which freezes the 10 Hz orchestrator the moment a request ends |
+| `--timeout 3600` | Lets the live WebSocket stay open |
+
+The image bakes the race in at build time (`scripts/prefetch.py`), so a cold
+container starts in ~9 s and has no runtime dependency on the F1 timing API
+being up or ungated. Build is ~1.2 GB, of which 106 MB is cached telemetry.
+
+### Grafana Cloud
+
+Grafana Cloud **cannot scrape a local process** — there is no route from their
+network to your machine. The dashboard and annotations work over the HTTP API
+as soon as `GRAFANA_URL` and `GRAFANA_TOKEN` point at your stack, but metrics
+have to be pushed: uncomment the `remote_write` block in
+[`scripts/prometheus.yml`](scripts/prometheus.yml) so the local Prometheus
+scrapes and forwards to Grafana Cloud's hosted Prometheus.
+
 ## Notes on the data
 
 Race order and every gap derive from arc-length along a circuit centerline built

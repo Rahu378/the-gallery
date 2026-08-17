@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+.env
+.claude
+cache
+grafana-data
+README.md
+docker-compose.yml
+*.log
+.DS_Store
