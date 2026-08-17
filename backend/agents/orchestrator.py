@@ -1,0 +1,271 @@
+"""The broadcast loop.
+
+  tick (10 Hz)
+    ├─ advance the race source
+    ├─ TensionScorer   → score all adjacent pairings          [deterministic]
+    ├─ push metrics    → Prometheus → Grafana
+    ├─ CutGuard        → is a change permitted right now?      [deterministic]
+    ├─ DirectorAgent   → which story, and why                  [Gemini / ADK]
+    └─ on commit       → Grafana annotation on the race timeline
+
+The director runs off the hot path: it is dispatched as a task and applied when
+it resolves, so a slow model call never stalls the feed.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from dataclasses import dataclass, field
+
+from ..config import settings
+from ..data.source import Frame, build_source
+from ..grafana.client import grafana
+from ..grafana.metrics import metrics
+from .cutguard import CutGuard
+from .director import DirectorAgent, Decision
+from .tension import Battle, TensionScorer
+
+log = logging.getLogger("gallery.orchestrator")
+
+
+@dataclass
+class LogEntry:
+    t: float
+    kind: str        # cut | hold | release | alert | system
+    text: str
+    tier: str = ""
+
+
+@dataclass
+class State:
+    lap: int = 0
+    total_laps: int = 0
+    race_t: float = 0.0
+    circuit: str = ""
+    source: str = ""
+    cars: list = field(default_factory=list)
+    battles: list = field(default_factory=list)
+    on_air: dict | None = None
+    top_score: float = 0.0
+    log: list = field(default_factory=list)
+    director_tier: str = "heuristic"
+    director_latency: int = 0
+    grafana_live: bool = False
+    pairings_scored: int = 0
+
+
+class Orchestrator:
+    def __init__(self) -> None:
+        self.source = build_source()
+        self.scorer = TensionScorer()
+        self.guard = CutGuard(settings.min_hold_s, settings.max_hold_s)
+        self.director = DirectorAgent()
+        self.state = State(
+            circuit=self.source.meta.name,
+            source=self.source.meta.source,
+            total_laps=self.source.meta.total_laps,
+            director_tier=self.director.tier,
+        )
+        self.outline = self.source.meta.outline
+        self._log: list[LogEntry] = []
+        self._pending: asyncio.Task | None = None
+        self._last_call = 0.0
+        self._subs: set[asyncio.Queue] = set()
+        self._running = False
+
+    # ------------------------------------------------------------------ log
+    def _emit(self, kind: str, text: str, tier: str = "") -> None:
+        self._log.insert(0, LogEntry(self.state.race_t, kind, text, tier))
+        del self._log[24:]
+
+    # ------------------------------------------------------------ subscribe
+    def subscribe(self) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue(maxsize=4)
+        self._subs.add(q)
+        return q
+
+    def unsubscribe(self, q: asyncio.Queue) -> None:
+        self._subs.discard(q)
+
+    def _publish(self, payload: dict) -> None:
+        for q in list(self._subs):
+            if q.full():
+                try:
+                    q.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            try:
+                q.put_nowait(payload)
+            except asyncio.QueueFull:
+                pass
+
+    # --------------------------------------------------------------- metrics
+    def _push_metrics(self, frame: Frame, battles: list[Battle]) -> None:
+        metrics.clear_gauges("gallery_battle_")
+        for b in battles[:8]:
+            labels = {"position": str(b.position), "ahead": b.ahead, "behind": b.behind}
+            metrics.gauge("gallery_battle_tension", b.score, **labels)
+            metrics.gauge("gallery_battle_gap_seconds", b.gap, **labels)
+        metrics.gauge("gallery_race_lap", frame.lap)
+        metrics.gauge("gallery_on_air_score", self.guard.current_score)
+        metrics.inc("gallery_pairings_scored_total", max(0, len(frame.cars) - 1))
+        self.state.pairings_scored += max(0, len(frame.cars) - 1)
+
+    # ------------------------------------------------------------ the loop
+    async def run(self) -> None:
+        self._running = True
+        dt = 1.0 / settings.tick_hz
+        race_dt = dt * settings.replay_speed
+
+        metrics.describe("gallery_cuts_total", "counter", "World feed cuts, by tier")
+        self._emit("system", f"source: {self.source.meta.source} · {self.source.meta.name}")
+        self._emit("system", f"director: {self.director.tier} · {settings.director_model}")
+
+        asyncio.create_task(self._provision_grafana())
+
+        for frame in self.source.frames(race_dt):
+            if not self._running:
+                break
+            started = time.perf_counter()
+
+            battles = self.scorer.score_frame(frame)
+            self._push_metrics(frame, battles)
+
+            self.state.lap = frame.lap
+            self.state.race_t = frame.t
+            self.state.total_laps = frame.total_laps or self.state.total_laps
+            self.state.cars = [
+                {"num": c.num, "code": c.code, "team": c.team, "color": c.color,
+                 "x": round(c.x, 5), "y": round(c.y, 5), "pos": c.pos,
+                 "gap": round(c.gap_ahead, 3), "closing": round(c.closing, 4),
+                 "tyre": c.tyre, "age": c.tyre_age}
+                for c in frame.cars
+            ]
+            self.state.battles = [b.as_dict() for b in battles[:8]]
+            self.state.top_score = battles[0].score if battles else 0.0
+
+            if self.guard.current:
+                self.director.note_airtime(self.guard.current, race_dt)
+
+            await self._maybe_direct(frame, battles)
+            self._publish(self.snapshot())
+
+            spent = time.perf_counter() - started
+            await asyncio.sleep(max(0.0, dt - spent))
+
+    async def _maybe_direct(self, frame: Frame, battles: list[Battle]) -> None:
+        candidate = next((b for b in battles if b.score >= settings.battle_threshold), None)
+
+        # Track the score of whatever is on air so the guard can compare.
+        if self.guard.current:
+            live = next((b for b in battles if b.ahead_num == self.guard.current), None)
+            self.guard.current_score = live.score if live else 0.0
+            if live is None and self.state.on_air and self.state.on_air.get("hot"):
+                self.state.on_air["hot"] = False
+                self._emit("release", f"battle resolved — car {self.guard.current} released")
+
+        verdict = self.guard.evaluate(frame.t, candidate, self.guard.current_score)
+        if not verdict.allowed or candidate is None:
+            return
+        if self._pending and not self._pending.done():
+            return
+        if time.monotonic() - self._last_call < settings.director_cooldown_s:
+            return
+
+        self._last_call = time.monotonic()
+        self._pending = asyncio.create_task(
+            self._direct(battles, frame, candidate, verdict.reason)
+        )
+
+    async def _direct(self, battles: list[Battle], frame: Frame,
+                      candidate: Battle, reason: str) -> None:
+        try:
+            decision: Decision = await self.director.decide(
+                battles, frame.lap, frame.total_laps, self.guard.current
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("director failed: %s", exc)
+            return
+
+        chosen = next((b for b in battles if b.ahead_num == decision.cut_to), candidate)
+        if decision.cut_to != chosen.ahead_num:
+            log.debug("director named car %s, not a candidate — using %s",
+                      decision.cut_to, chosen.ahead_num)
+
+        # The guard cleared a change, but the director can still land on the car
+        # already on air — the battle it left may have re-formed. That is a hold
+        # with a fresh commentary line, not a cut: refresh the shot, don't
+        # re-count it and don't put a second annotation on the timeline.
+        if chosen.ahead_num == self.guard.current and self.state.on_air:
+            self.guard.current_score = chosen.score
+            self.state.on_air.update({
+                "line": decision.line, "gap": chosen.gap,
+                "score": chosen.score, "against": chosen.behind, "hot": True,
+            })
+            self._emit("hold", f"holding car {chosen.ahead_num} — {decision.line}")
+            return
+
+        self.guard.commit(chosen.ahead_num, frame.t, chosen.score)
+        self.state.director_tier = decision.tier
+        self.state.director_latency = decision.latency_ms
+        metrics.inc("gallery_cuts_total", tier=decision.tier)
+        metrics.gauge("gallery_director_latency_ms", decision.latency_ms)
+
+        self.state.on_air = {
+            "num": chosen.ahead_num, "code": chosen.ahead,
+            "against": chosen.behind, "against_num": chosen.behind_num,
+            "shot": decision.shot, "line": decision.line,
+            "score": chosen.score, "gap": chosen.gap,
+            "position": chosen.position, "confidence": decision.confidence,
+            "tier": decision.tier, "hot": True,
+        }
+        self._emit("cut",
+                   f"cut → car {chosen.ahead_num} ({chosen.ahead}) · P{chosen.position} "
+                   f"· {chosen.score:.2f} — {decision.line}",
+                   decision.tier)
+        log.info("CUT %s (%s) tier=%s %dms — %s",
+                 chosen.ahead_num, chosen.ahead, decision.tier,
+                 decision.latency_ms, decision.line)
+
+        await grafana.annotate_cut(
+            time_ms=int(time.time() * 1000), driver=chosen.ahead_num,
+            code=chosen.ahead, line=decision.line, tier=decision.tier,
+            score=chosen.score,
+        )
+
+    # ---------------------------------------------------------------- grafana
+    async def _provision_grafana(self) -> None:
+        ok = await grafana.health()
+        self.state.grafana_live = ok
+        if not ok:
+            self._emit("system", "grafana: offline — calls recorded, see /api/grafana")
+            return
+        url = await grafana.ensure_dashboard()
+        await grafana.ensure_alert_rule()
+        self._emit("system", f"grafana: dashboard provisioned · alert rule installed")
+        if url:
+            log.info("dashboard %s", url)
+
+    # --------------------------------------------------------------- snapshot
+    def snapshot(self) -> dict:
+        s = self.state
+        return {
+            "lap": s.lap, "total_laps": s.total_laps, "race_t": round(s.race_t, 1),
+            "circuit": s.circuit, "source": s.source,
+            "cars": s.cars, "battles": s.battles,
+            "on_air": s.on_air, "top_score": round(s.top_score, 3),
+            "director": {"tier": s.director_tier, "latency_ms": s.director_latency,
+                         "model": settings.director_model,
+                         "blocked": self.director.block_reason,
+                         "configured": settings.gemini_ready},
+            "grafana": {"live": s.grafana_live, "url": grafana.dashboard_url,
+                        "enabled": grafana.enabled},
+            "pairings_scored": s.pairings_scored,
+            "hold": round(max(0.0, s.race_t - self.guard.since), 1) if self.guard.current else 0.0,
+            "log": [{"t": round(e.t, 1), "kind": e.kind, "text": e.text, "tier": e.tier}
+                    for e in self._log],
+        }
+
+    def stop(self) -> None:
+        self._running = False

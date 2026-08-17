@@ -1,0 +1,34 @@
+# Grafana + Prometheus for the partner integration.
+#   docker compose up -d
+#   Grafana → http://localhost:3000  (admin / admin)
+#
+# Prometheus scrapes the agent's /metrics endpoint; the app provisions its own
+# dashboard and alert rule over the Grafana HTTP API on startup.
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: gallery-prometheus
+    ports: ["9090:9090"]
+    volumes:
+      - ./scripts/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: gallery-grafana
+    ports: ["3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_FEATURE_TOGGLES_ENABLE: publicDashboards
+    volumes:
+      - ./scripts/grafana-datasource.yml:/etc/grafana/provisioning/datasources/ds.yml:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus]
+
+volumes:
+  grafana-data:

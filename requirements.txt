@@ -1,0 +1,16 @@
+# --- Google Cloud / Gemini agent runtime -------------------------------------
+google-adk>=1.0.0
+google-genai>=1.0.0
+
+# --- Partner integration: Grafana --------------------------------------------
+httpx>=0.27.0
+
+# --- Real Formula 1 timing + position telemetry ------------------------------
+fastf1>=3.4.0
+numpy>=1.26.0
+pandas>=2.1.0
+
+# --- Serving -----------------------------------------------------------------
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-dotenv>=1.0.0

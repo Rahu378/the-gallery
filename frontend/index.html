@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Gallery — agentic world feed direction</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%2308080C'/><rect x='13' y='6' width='6' height='20' rx='1' fill='%23A24BFF'/></svg>" />
+</head>
+<body>
+<div class="shell">
+
+  <header class="top">
+    <span class="brand"><i class="mark"></i>THE GALLERY</span>
+    <span class="sep">│</span>
+    <span><span class="k">circuit</span> <span class="v" id="circuit">—</span></span>
+    <span><span class="k">lap</span> <span class="v" id="lap">—</span></span>
+    <div class="right">
+      <span class="chip" id="chipSource"><i></i><span>source</span></span>
+      <span class="chip ai" id="chipModel"><i></i><span>director</span></span>
+      <span class="chip" id="chipGrafana"><i></i><span>grafana</span></span>
+    </div>
+  </header>
+
+  <div class="grid">
+
+    <!-- ── timing tower ───────────────────────────────── -->
+    <section class="col">
+      <div class="col-h">
+        <span>Timing</span>
+        <span class="count" id="towerCount">—</span>
+      </div>
+      <div class="tower" id="tower"></div>
+    </section>
+
+    <!-- ── track map ──────────────────────────────────── -->
+    <section class="col">
+      <div class="col-h">
+        <span class="agent">◆ tension</span>
+        <span class="agent">◆ director</span>
+        <span class="agent">◆ cut-guard</span>
+        <span class="count" id="scored">—</span>
+      </div>
+      <div class="stage">
+        <canvas id="map"></canvas>
+        <div class="stage-tag">
+          <span>Live map</span>
+          <b id="mapName">—</b>
+          <span class="src" id="mapSrc">—</span>
+        </div>
+        <div class="legend">
+          <span><i style="background:#5E5E74"></i>in range</span>
+          <span><i style="background:#A24BFF;box-shadow:0 0 6px #A24BFF"></i>cut candidate</span>
+          <span><i style="background:#00E676"></i>DRS</span>
+        </div>
+        <div class="flash" id="flash"></div>
+      </div>
+    </section>
+
+    <!-- ── right rail ─────────────────────────────────── -->
+    <section class="col right">
+      <div class="block">
+        <div class="block-lab">
+          <span>World feed</span>
+          <span class="rec"><i></i>on air</span>
+        </div>
+        <div class="onair" id="onair">
+          <div class="onair-top">
+            <span class="onair-num" id="oaNum" style="background:#5E5E74">—</span>
+            <span class="onair-meta">
+              <b id="oaShot">STANDBY</b>
+              <span id="oaAgainst">waiting for a story</span>
+            </span>
+          </div>
+          <div class="onair-line" id="oaLine">The director has not committed a shot yet.</div>
+          <div class="onair-foot">
+            <span>hold <span id="oaHold">0.0s</span></span>
+            <span>conf <span id="oaConf">—</span></span>
+            <span class="tier" id="oaTier">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="block">
+        <div class="block-lab"><span>Contested positions</span></div>
+        <div id="battles"></div>
+      </div>
+
+      <div class="block" style="border-bottom:0">
+        <div class="block-lab"><span>Agent decisions</span></div>
+        <ul class="log" id="log"></ul>
+      </div>
+    </section>
+  </div>
+
+  <footer class="foot">
+    <span class="pipe">
+      <span class="node">FastF1</span><span class="arrow">→</span>
+      <span class="node">tension</span><span class="arrow">→</span>
+      <span class="node llm">Gemini · ADK</span><span class="arrow">→</span>
+      <span class="node">cut-guard</span><span class="arrow">→</span>
+      <span class="node">feed</span>
+    </span>
+    <div class="right">
+      <span>latency <span class="v" id="fLatency">—</span></span>
+      <span>pairings <span class="v" id="fScored">—</span></span>
+      <span><a href="/api/grafana" target="_blank" rel="noopener">grafana calls</a></span>
+      <span><a href="/metrics" target="_blank" rel="noopener">/metrics</a></span>
+    </div>
+  </footer>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

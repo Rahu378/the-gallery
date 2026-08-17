@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+cache/
+.fastf1_cache/
+.DS_Store
+*.log
+grafana-data/
