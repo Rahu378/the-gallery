@@ -124,9 +124,30 @@ class Orchestrator:
 
         asyncio.create_task(self._provision_grafana())
 
-        for frame in self.source.frames(race_dt):
+        while self._running:
+            await self._replay(race_dt)
             if not self._running:
                 break
+            # A real race is finite. Left alone the loop returns here, the feed
+            # goes silent and anyone opening the page later sees a frozen
+            # screen — so rewind to lights-out and run it again. Gap history is
+            # dropped with it, or closing rates would be computed across the
+            # seam between the last lap and the first.
+            reset = getattr(self.source, "reset", None)
+            if reset is None:
+                break
+            reset()
+            self.scorer = TensionScorer()
+            self.guard.current = None
+            self.state.on_air = None
+            self._emit("system", "race complete — replaying from lights-out")
+            log.info("replay exhausted, looping")
+
+    async def _replay(self, race_dt: float) -> None:
+        dt = 1.0 / settings.tick_hz
+        for frame in self.source.frames(race_dt):
+            if not self._running:
+                return
             started = time.perf_counter()
 
             battles = self.scorer.score_frame(frame)

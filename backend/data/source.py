@@ -258,6 +258,10 @@ class FastF1Source:
                 break
         return cur
 
+    def reset(self) -> None:
+        """Rewind to lights-out so the replay can loop."""
+        self.i = 0
+
     def frames(self, dt: float) -> Iterator[Frame]:
         stride = max(1, int(round(dt / self.step)))
         while self.i < len(self.grid):
