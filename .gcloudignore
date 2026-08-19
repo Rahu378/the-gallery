@@ -1,0 +1,18 @@
+# gcloud uploads the build context using THIS file. Without it, gcloud derives
+# the ignore list from .gitignore — which excludes cache/, so the warmed FastF1
+# race never reaches Cloud Build and the container silently falls back to the
+# synthetic source. The cache must ship; it is the whole point of baking it.
+
+.git
+.gitignore
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+.env
+.claude
+grafana-data
+*.log
+.DS_Store
+docker-compose.yml

@@ -21,7 +21,12 @@ WORKDIR /build
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-# Bake the race in. Non-fatal by design — see scripts/prefetch.py.
+# Ship the cache from the build context first. Cloud Build egress cannot reach
+# the F1 timing API — position data comes back empty there — so regenerating
+# the race inside the build silently produces an empty cache and the container
+# falls back to the synthetic source. A locally warmed cache always wins;
+# prefetch below only fills a gap when the context has none.
+COPY cache/ /build/cache/
 COPY scripts/prefetch.py scripts/prefetch.py
 ARG RACE_YEAR=2023
 ARG RACE_EVENT=Monza

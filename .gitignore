@@ -8,3 +8,4 @@ cache/
 .DS_Store
 *.log
 grafana-data/
+!cache/.keep

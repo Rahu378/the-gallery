@@ -31,7 +31,14 @@ say "project $PROJECT_ID · region $REGION · service $SERVICE"
 
 # ---------------------------------------------------------------- env
 [ -f .env ] || die ".env not found — copy .env.example and fill it in"
-set -a; . ./.env; set +a
+# .env fills gaps; it must not overwrite anything the caller set explicitly,
+# or `GRAFANA_URL="" ./deploy.sh` silently ships the localhost value from .env.
+while IFS= read -r line; do
+  case "$line" in ''|'#'*) continue ;; esac
+  key="${line%%=*}"; val="${line#*=}"
+  case "$key" in *[!A-Za-z0-9_]*) continue ;; esac
+  if [ -z "${!key+x}" ]; then export "$key=$val"; fi
+done < .env
 [ -n "${GOOGLE_API_KEY:-}${GOOGLE_CLOUD_PROJECT:-}" ] || warn "no Gemini credentials — the director will run deterministic"
 [ -n "${GRAFANA_TOKEN:-}" ]  || warn "GRAFANA_TOKEN empty — Grafana calls will only be recorded"
 
@@ -79,6 +86,18 @@ if [ "$USE_VERTEX" = "1" ]; then
     --role=roles/aiplatform.user --condition=None --quiet >/dev/null
   say "granted roles/aiplatform.user to the runtime service account"
 fi
+
+# On a fresh project the compute default service account doubles as the Cloud
+# Build account but holds none of the roles the build needs. The failure is
+# opaque — "could not resolve source ... storage.objects.get denied" on a
+# bucket Cloud Run itself just created — so grant them up front.
+for R in roles/cloudbuild.builds.builder roles/storage.objectViewer \
+         roles/artifactregistry.writer roles/logging.logWriter; do
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${RUNTIME_SA}" --role="$R" \
+    --condition=None --quiet >/dev/null 2>&1 || warn "could not grant $R"
+done
+say "build roles granted"
 
 for s in gallery-gemini-key gallery-grafana-token; do
   gcloud secrets describe "$s" --project "$PROJECT_ID" >/dev/null 2>&1 || continue
