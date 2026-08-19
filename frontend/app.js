@@ -288,6 +288,19 @@
     });
   });
 
+  var tpPop = $("tpPop"), tpToggle = $("tpToggle");
+  function tpOpen(open) {
+    tpPop.hidden = !open;
+    tpToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  tpToggle.addEventListener("click", function (e) {
+    e.stopPropagation();
+    tpOpen(tpPop.hidden);
+  });
+  tpPop.addEventListener("click", function (e) { e.stopPropagation(); });
+  document.addEventListener("click", function () { if (!tpPop.hidden) tpOpen(false); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") tpOpen(false); });
+
   var lapEl = $("tLap");
   lapEl.addEventListener("input", function () {
     seeking = true;
@@ -302,6 +315,10 @@
     var b = $("tPlay");
     b.textContent = tr.paused ? "▶ Resume" : "❚❚ Pause";
     b.classList.toggle("paused", !!tr.paused);
+    // Surface a non-default state on the closed button, so a paused replay is
+    // never a mystery hidden inside a popover nobody opened.
+    tpToggle.textContent = tr.paused ? "▶ Paused" : (tr.speed !== 3 ? "⚙ " + tr.speed + "×" : "⚙ Replay");
+    tpToggle.classList.toggle("paused", !!tr.paused);
     [].forEach.call(document.querySelectorAll("[data-speed]"), function (x) {
       x.classList.toggle("on", Number(x.getAttribute("data-speed")) === tr.speed);
     });

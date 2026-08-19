@@ -518,3 +518,29 @@ body[data-view="operator"] #viewOperator { display: block; }
   .tval { font-size: 15px; min-width: 30px; }
   #tLap { max-width: 300px; height: 5px; }
 }
+
+
+/* ─────────── transport popover ───────────
+   Folded behind one footer button. Pause, speed and lap seek matter when
+   recording or inspecting, not while a race is running. */
+.tp-wrap { position: relative; }
+.tp-toggle { letter-spacing: .12em; }
+.tp-toggle[aria-expanded="true"] { color: var(--cyan); border-color: rgba(0,229,255,.5); background: rgba(0,229,255,.1); }
+
+.tp-pop {
+  position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 60;
+  min-width: 296px; padding: 14px;
+  border: 1px solid var(--glass-line); border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.01)), rgba(26,29,38,.97);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 22px 60px -20px rgba(0,0,0,.95);
+  display: flex; flex-direction: column; gap: 12px;
+  animation: tpIn .16s cubic-bezier(.2,.8,.3,1);
+}
+.tp-pop[hidden] { display: none; }
+@keyframes tpIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.tp-row { display: flex; align-items: center; gap: 10px; }
+.tp-row .tlabel { min-width: 66px; }
+.tp-seg { display: flex; gap: 4px; }
+.tp-pop #tLap { width: 130px; }

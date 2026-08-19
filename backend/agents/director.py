@@ -8,6 +8,14 @@ It is deliberately *not* in the 10 Hz loop. The tension scorer and the cut
 guard gate it, so Gemini is consulted only at genuine decision points — a few
 times a minute, which is also what a human director does.
 
+A response cache was tried here and removed. It never once hit, at any call
+frequency down to a one-second cooldown: the cut guard only releases a call
+when a *different* battle beats what is on air by a margin, so every request
+is about a situation that has by definition just changed, and the on-air car —
+part of any sensible cache key — has always rotated. The gating already does
+the deduplication a cache would, and quota pressure here comes from Vertex
+shared capacity rather than from asking the same question twice.
+
 Three execution tiers, so the project runs for anyone who clones it:
   1. ADK  `LlmAgent` + `Runner`  (primary — the hackathon requirement)
   2. google-genai direct call    (if ADK is unavailable)
@@ -22,7 +30,6 @@ import logging
 import random
 import re
 import time
-from collections import OrderedDict
 from dataclasses import dataclass
 
 from ..config import settings
@@ -81,36 +88,6 @@ def _fast_config():
         return None
 
 
-# How long a cached decision stays usable. Long enough to absorb a stable
-# train where nothing has actually changed, short enough that the same
-# commentary line never resurfaces minutes later as if it were new.
-CACHE_TTL_S = 45.0
-
-
-def _cache_key(candidates: list[Battle], on_air: str | None) -> str:
-    """Coarse signature of a decision point.
-
-    The director is asked near-identical questions repeatedly — the same two
-    cars, a gap that moved by three hundredths, the same shot already on air.
-    Quantising gap to 0.25s and score to 0.1 collapses those into one key, so a
-    genuinely new situation still reaches the model while a re-ask does not.
-    Anything that changes the answer is in the key; anything that does not, is
-    not.
-    """
-    parts = [f"air={on_air or '-'}"]
-    # Only the leading candidate and the runner-up shape the answer. Including
-    # the third made the key change on almost every tick, so it never matched
-    # anything and the cache did nothing at all.
-    for b in candidates[:2]:
-        parts.append(
-            f"{b.ahead_num}v{b.behind_num}"
-            f":p{b.position}"
-            f":g{round(b.gap * 2) / 2:.1f}"
-            f":d{int(b.drs)}"
-        )
-    return "|".join(parts)
-
-
 def _retry_after(exc: Exception) -> float:
     """Seconds to wait, read out of a 429 rather than guessed.
 
@@ -148,9 +125,6 @@ class DirectorAgent:
         self._session_ready = False
         self.blocked_until = 0.0     # monotonic; set by a 429
         self.block_reason = ""
-        self._cache: "OrderedDict[str, tuple[float, tuple]]" = OrderedDict()
-        self.cache_hits = 0
-        self.cache_misses = 0
 
         if not settings.gemini_ready:
             log.warning("no Gemini credentials — director runs on the deterministic tier")
@@ -289,20 +263,6 @@ class DirectorAgent:
 
         prompt = self._prompt(candidates, lap, total, on_air)
 
-        # A repeat of a decision point already answered. Reusing it saves a
-        # request against a shared quota and answers instantly, which matters
-        # more here than novelty — the situation has not changed.
-        key = _cache_key(candidates, on_air)
-        cached = self._cache.get(key)
-        if cached and time.monotonic() - cached[0] < CACHE_TTL_S:
-            self._cache.move_to_end(key)
-            self.cache_hits += 1
-            cut, shot, line, conf = cached[1]
-            return Decision(cut, shot, line, conf, "cached", elapsed())
-        if cached:
-            del self._cache[key]
-        self.cache_misses += 1
-
         # Under a quota block, go straight to deterministic. Firing a request we
         # know will 429 costs ~1 s of latency and buys nothing.
         if time.monotonic() < self.blocked_until:
@@ -342,7 +302,6 @@ class DirectorAgent:
                 parsed = self._parse(text, top)
                 if parsed:
                     self.block_reason = ""
-                    self._remember(key, parsed)
                     cut, shot, line, conf = parsed
                     return Decision(cut, shot, line, conf, "adk", elapsed())
                 log.debug("ADK returned unparseable output: %r", text[:200])
@@ -367,7 +326,6 @@ class DirectorAgent:
                 parsed = self._parse(resp.text or "", top)
                 if parsed:
                     self.block_reason = ""
-                    self._remember(key, parsed)
                     cut, shot, line, conf = parsed
                     return Decision(cut, shot, line, conf, "genai", elapsed())
             except Exception as exc:  # noqa: BLE001
@@ -378,16 +336,6 @@ class DirectorAgent:
 
         # ---- tier 3: deterministic ----
         return heuristic()
-
-    def _remember(self, key: str, parsed: tuple) -> None:
-        self._cache[key] = (time.monotonic(), parsed)
-        while len(self._cache) > 256:
-            self._cache.popitem(last=False)
-
-    @property
-    def cache_rate(self) -> float:
-        total = self.cache_hits + self.cache_misses
-        return self.cache_hits / total if total else 0.0
 
     async def _ensure_session(self) -> None:
         try:

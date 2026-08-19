@@ -189,19 +189,29 @@
   </div>
 
   <footer class="foot">
-<div class="transport">
-        <button type="button" id="tPlay" class="tbtn" title="Pause or resume the replay">❚❚ Pause</button>
-        <span class="tsep"></span>
-        <span class="tlabel">Speed</span>
-        <button type="button" class="tbtn sm" data-speed="1">1×</button>
-        <button type="button" class="tbtn sm on" data-speed="3">3×</button>
-        <button type="button" class="tbtn sm" data-speed="6">6×</button>
-        <button type="button" class="tbtn sm" data-speed="12">12×</button>
-        <span class="tsep"></span>
-        <span class="tlabel">Lap</span>
-        <input type="range" id="tLap" min="1" max="51" value="1" title="Jump to a lap" />
-        <span class="tval" id="tLapV">1</span>
+<div class="tp-wrap">
+      <button type="button" class="tbtn tp-toggle" id="tpToggle" aria-expanded="false">⚙ Replay</button>
+      <div class="tp-pop" id="tpPop" hidden>
+        <div class="tp-row">
+          <span class="tlabel">Playback</span>
+          <button type="button" id="tPlay" class="tbtn">❚❚ Pause</button>
+        </div>
+        <div class="tp-row">
+          <span class="tlabel">Speed</span>
+          <span class="tp-seg">
+            <button type="button" class="tbtn sm" data-speed="1">1×</button>
+            <button type="button" class="tbtn sm on" data-speed="3">3×</button>
+            <button type="button" class="tbtn sm" data-speed="6">6×</button>
+            <button type="button" class="tbtn sm" data-speed="12">12×</button>
+          </span>
+        </div>
+        <div class="tp-row">
+          <span class="tlabel">Lap</span>
+          <input type="range" id="tLap" min="1" max="51" value="1" />
+          <span class="tval" id="tLapV">1</span>
+        </div>
       </div>
+    </div>
     <span class="tsep"></span>
     <span class="pipe" id="pipe">
       <button class="node" type="button" data-explain="fastf1">FastF1</button><span class="arrow">→</span>
