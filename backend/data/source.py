@@ -192,13 +192,17 @@ class FastF1Source:
 
         self.cars: list[Car] = []
         self.prog: dict[str, np.ndarray] = {}
+        self.arc: dict[str, np.ndarray] = {}
         for i, d in enumerate(drivers):
             df = pos[d]
             ts = df["SessionTime"].dt.total_seconds().to_numpy()
             gx = np.interp(self.grid, ts, df["X"].to_numpy())
             gy = np.interp(self.grid, ts, df["Y"].to_numpy())
-            s = self.cl.project(gx, gy)
-            self.prog[d] = unwrap_progress(s, self.cl.length)
+            # Time-ordered path, so project with continuity rather than
+            # nearest-point — see Centerline.project_path.
+            s = self.cl.project_path(gx, gy)
+            self.arc[d] = (s % self.cl.length) / self.cl.length   # map position
+            self.prog[d] = self._progress(d, laps, s)             # race distance
 
             row = results[results["DriverNumber"].astype(str) == d]
             code = str(row["Abbreviation"].iloc[0]) if len(row) else d
@@ -236,6 +240,49 @@ class FastF1Source:
         )
         self.i = 0
         log.info("loaded %s — %d drivers, %d frames", self.meta.name, len(self.cars), len(self.grid))
+
+    def _progress(self, driver: str, laps, s: np.ndarray) -> np.ndarray:
+        """Race distance in laps, from official timing alone.
+
+        Geometry is the wrong instrument for this. Counting laps by watching
+        arc-length wrap works while the field is bunched, as at Monza, and
+        fails once it spreads: one missed crossing puts a car a whole lap out,
+        and at Spa by lap three the actual leaders were being ranked behind
+        backmarkers. Mixing the two — official lap plus geometric fraction —
+        is worse again, because the centerline origin and the timing line are
+        not the same point, so the two disagree by a sliver every lap and the
+        error alternates sign.
+
+        Timing knows exactly when each lap began. Interpolating between lap
+        starts gives fractional race distance directly: monotonic by
+        construction, exact at every boundary, and immune to anything the
+        projection does. Geometry keeps the job it is good at — putting the
+        car in the right place on the map.
+        """
+        dl = laps[laps["DriverNumber"].astype(str) == driver]
+        starts, numbers = [], []
+        for _, r in dl.iterrows():
+            st = r["LapStartTime"]
+            if st != st:
+                continue
+            starts.append(st.total_seconds())
+            numbers.append(float(r["LapNumber"]) - 1.0)
+
+        if len(starts) < 2:
+            return unwrap_progress(s, self.cl.length)
+
+        order = np.argsort(starts)
+        starts_a = np.asarray(starts)[order]
+        numbers_a = np.asarray(numbers)[order]
+
+        # Extend the final lap so a car still running at the end of the grid
+        # keeps advancing instead of flat-lining on its last recorded start.
+        if len(starts_a) >= 2:
+            last_len = starts_a[-1] - starts_a[-2]
+            starts_a = np.append(starts_a, starts_a[-1] + max(1.0, last_len))
+            numbers_a = np.append(numbers_a, numbers_a[-1] + 1.0)
+
+        return np.interp(self.grid, starts_a, numbers_a)
 
     @staticmethod
     def _build_centerline(ses, pos, drivers) -> Centerline:
@@ -372,7 +419,7 @@ class FastF1Source:
                     * (self.cl.length / UNITS_PER_METRE) * 3.6
                 )
                 c.progress = p
-                sx, sy = self.cl.point_at((p % 1.0) * self.cl.length)
+                sx, sy = self.cl.point_at(float(self.arc[c.num][self.i]) * self.cl.length)
                 c.x, c.y = sx, sy
                 c.tyre, c.tyre_age = self._tyre_at(c.num, t)
             order = sorted(self.cars, key=lambda c: -c.progress)
@@ -387,10 +434,34 @@ class FastF1Source:
             self.i += stride
 
 
-def build_source():
+# Races shipped in the image. Keep in step with scripts/prefetch.py — anything
+# listed here that is not in the cache will try to reach the F1 API at runtime,
+# which is not reachable from Cloud Run.
+CATALOGUE = [
+    {"id": "monza", "year": 2023, "event": "Italian Grand Prix",
+     "label": "Monza", "note": "flat-out, two DRS zones"},
+    {"id": "spa", "year": 2023, "event": "Belgian Grand Prix",
+     "label": "Spa", "note": "longest lap on the calendar"},
+    {"id": "silverstone", "year": 2023, "event": "British Grand Prix",
+     "label": "Silverstone", "note": "fast and flowing"},
+    {"id": "barcelona", "year": 2023, "event": "Spanish Grand Prix",
+     "label": "Barcelona", "note": "conventional permanent circuit"},
+]
+
+
+def catalogue() -> list[dict]:
+    return [dict(r) for r in CATALOGUE]
+
+
+def build_source(race_id: str | None = None):
     """Real race if we can get it, deterministic synthetic if we can't."""
+    year, event, session = settings.race_year, settings.race_event, settings.race_session
+    if race_id:
+        picked = next((r for r in CATALOGUE if r["id"] == race_id), None)
+        if picked:
+            year, event, session = picked["year"], picked["event"], "R"
     try:
-        src = FastF1Source(settings.race_year, settings.race_event, settings.race_session)
+        src = FastF1Source(year, event, session)
         log.info("source: FastF1 — %s", src.meta.name)
         return src
     except Exception as exc:  # noqa: BLE001 — any failure must degrade, not crash

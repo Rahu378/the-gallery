@@ -89,6 +89,36 @@ class Centerline:
         idx = np.argmin(dx * dx + dy * dy, axis=1)
         return self.cum[idx]
 
+    def project_path(self, x: np.ndarray, y: np.ndarray, window: int = 60) -> np.ndarray:
+        """Arc-length for a *time-ordered* path, constrained to stay continuous.
+
+        Plain nearest-point projection is ambiguous wherever a circuit runs
+        close to itself — at Spa the start/finish complex passes near the bus
+        stop exit, so a car snaps onto the wrong part of the centerline, the
+        arc-length jumps backwards, and unwrap_progress scores it as a
+        completed lap. Backmarkers accumulate phantom laps and appear to lead.
+
+        Searching a window around the previous match removes the ambiguity:
+        between samples a car moves a few tens of metres, never half a lap.
+        """
+        px = np.asarray(x, float)
+        py = np.asarray(y, float)
+        n = len(self.pts)
+        out = np.empty(len(px))
+
+        d0 = (px[0] - self.pts[:, 0]) ** 2 + (py[0] - self.pts[:, 1]) ** 2
+        idx = int(np.argmin(d0))
+        out[0] = self.cum[idx]
+
+        offsets = np.arange(-window, window + 1)
+        for k in range(1, len(px)):
+            cand = (idx + offsets) % n
+            d = ((px[k] - self.pts[cand, 0]) ** 2 +
+                 (py[k] - self.pts[cand, 1]) ** 2)
+            idx = int(cand[int(np.argmin(d))])
+            out[k] = self.cum[idx]
+        return out
+
     def point_at(self, s: float) -> tuple[float, float]:
         """Normalised (x, y) in [0,1]^2 at arc-length `s`."""
         s = s % self.length

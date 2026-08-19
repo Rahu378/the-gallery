@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 
 from ..config import settings
-from ..data.source import Frame, build_source
+from ..data.source import Frame, build_source, catalogue
 from ..grafana.client import grafana
 from ..grafana.metrics import metrics
 from ..grafana.remote_write import RemoteWriter
@@ -82,6 +82,9 @@ class Orchestrator:
         self._running = False
         self.paused = False
         self.speed = settings.replay_speed
+        self.race_id = None
+        self._restart = False
+        self.circuit_rev = 0
 
     # ------------------------------------------------------------------ log
     def _emit(self, kind: str, text: str, tier: str = "") -> None:
@@ -142,6 +145,45 @@ class Orchestrator:
         self.speed = max(0.5, min(40.0, float(speed)))
         self._emit("system", f"replay speed {self.speed:g}x")
 
+    async def switch_race(self, race_id: str) -> bool:
+        """Load a different circuit without dropping connected viewers.
+
+        Building the source is CPU-bound for a second or two off a warm cache,
+        so it runs in a worker thread — doing it inline stalls the event loop
+        and every open WebSocket stutters.
+        """
+        ids = [r["id"] for r in catalogue()]
+        if race_id not in ids:
+            return False
+        self._emit("system", f"loading {race_id}…")
+        was_paused = self.paused
+        self.paused = True
+        try:
+            src = await asyncio.to_thread(build_source, race_id)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("race switch failed: %s", exc)
+            self._emit("system", f"could not load {race_id}")
+            self.paused = was_paused
+            return False
+
+        self.source = src
+        self.outline = src.meta.outline
+        self.race_id = race_id
+        self.scorer = TensionScorer()
+        self.guard.current = None
+        self.state.on_air = None
+        self.state.circuit = src.meta.name
+        self.state.source = src.meta.source
+        self.state.total_laps = src.meta.total_laps
+        self._restart = True
+        # Clients hold the outline from connect time. Bumping this tells them to
+        # refetch geometry rather than shipping 900 points on every tick.
+        self.circuit_rev += 1
+        self.paused = was_paused
+        self._emit("system", f"circuit: {src.meta.name}")
+        log.info("switched to %s", src.meta.name)
+        return True
+
     def seek_lap(self, lap: int) -> bool:
         """Jump the replay to the start of a lap."""
         seek = getattr(self.source, "seek_lap", None)
@@ -174,6 +216,9 @@ class Orchestrator:
             await self._replay(dt)
             if not self._running:
                 break
+            if self._restart:
+                self._restart = False
+                continue
             # A real race is finite. Left alone the loop returns here, the feed
             # goes silent and anyone opening the page later sees a frozen
             # screen — so rewind to lights-out and run it again. Gap history is
@@ -192,8 +237,9 @@ class Orchestrator:
     async def _replay(self, dt: float) -> None:
         # Speed is read through a callable so the transport can change it
         # mid-race without restarting the generator.
-        for frame in self.source.frames(lambda: dt * self.speed):
-            if not self._running:
+        source = self.source
+        for frame in source.frames(lambda: dt * self.speed):
+            if not self._running or self._restart or source is not self.source:
                 return
             # Hold here while paused rather than skipping frames, so resuming
             # continues from the same moment instead of jumping ahead.
@@ -361,7 +407,10 @@ class Orchestrator:
                         "pushed": self.writer.sent,
                         "push_error": self.writer.last_error},
             "pairings_scored": s.pairings_scored,
-            "transport": {"paused": self.paused, "speed": self.speed},
+            "transport": {"paused": self.paused, "speed": self.speed,
+                          "race_id": self.race_id},
+            "races": catalogue(),
+            "circuit_rev": self.circuit_rev,
             "hold": round(max(0.0, s.race_t - self.guard.since), 1) if self.guard.current else 0.0,
             "log": [{"t": round(e.t, 1), "kind": e.kind, "text": e.text, "tier": e.tier}
                     for e in self._log],

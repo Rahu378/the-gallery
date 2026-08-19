@@ -26,6 +26,7 @@
   var prev = null, next = null, tPrev = 0, tNext = 0;
   var trails = {}, lastCutKey = "", latest = null;
   var selected = null;      // driver number the operator is tracking
+  var circuitRev = -1;
   var logFrozen = false;    // hover-freeze on the decision log
 
   /* ───────── socket ───────── */
@@ -101,7 +102,7 @@
          s.grafana.live ? "grafana live" : (s.grafana.enabled ? "grafana unreachable" : "grafana off"),
          s.grafana.live ? "on" : "warn");
 
-    paintTower(s); paintOnAir(s); paintBattles(s); paintMetrics(s); paintViews(s); paintFocus(s); paintTransport(s);
+    paintTower(s); paintOnAir(s); paintBattles(s); paintMetrics(s); paintViews(s); paintFocus(s); paintTransport(s); refreshCircuit(s);
     if (!logFrozen) paintLog(s);
   }
 
@@ -303,6 +304,38 @@
   document.addEventListener("click", function () { if (!tpPop.hidden) tpOpen(false); });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") tpOpen(false); });
 
+  var raceEl = $("tRace");
+  raceEl.addEventListener("change", function () {
+    raceEl.disabled = true;
+    // Selection belongs to the old field; carrying it over rings a car that
+    // may not be in this race.
+    if (selected) select(selected);
+    trails = {};
+    fetch("/api/control/race/" + encodeURIComponent(raceEl.value), { method: "POST" })
+      .catch(function () {})
+      .then(function () { raceEl.disabled = false; });
+  });
+
+  function paintRaces(s) {
+    if (!s.races || raceEl.options.length === s.races.length) return;
+    raceEl.innerHTML = s.races.map(function (r) {
+      return '<option value="' + r.id + '">' + esc(r.label) + " — " + esc(r.note) + "</option>";
+    }).join("");
+  }
+
+  function refreshCircuit(s) {
+    if (s.circuit_rev === circuitRev) return;
+    circuitRev = s.circuit_rev;
+    fetch("/api/circuit").then(function (r) { return r.json(); }).then(function (d) {
+      outline = d.outline || [];
+      corners = d.corners || [];
+      drsZones = d.drs_zones || [];
+      if (d.bounds && d.bounds.length === 4) bounds = d.bounds;
+      trails = {};
+      el.mapName.textContent = d.name || "—";
+    }).catch(function () {});
+  }
+
   var lapEl = $("tLap");
   lapEl.addEventListener("input", function () {
     seeking = true;
@@ -324,6 +357,8 @@
     [].forEach.call(document.querySelectorAll("[data-speed]"), function (x) {
       x.classList.toggle("on", Number(x.getAttribute("data-speed")) === tr.speed);
     });
+    paintRaces(s);
+    if (tr.race_id && raceEl.value !== tr.race_id) raceEl.value = tr.race_id;
     if (!seeking) {
       lapEl.max = s.total_laps || 51;
       lapEl.value = s.lap;

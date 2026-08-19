@@ -138,12 +138,22 @@ async def control(action: str, value: float = 0) -> dict:
         orch.set_paused(False)
     elif action == "speed":
         orch.set_speed(value)
+    elif action == "race":
+        return {"ok": False, "error": "use /api/control/race/{id}"}
     elif action == "seek":
         if not orch.seek_lap(int(value)):
             return {"ok": False, "error": "lap out of range"}
     else:
         return {"ok": False, "error": f"unknown action {action}"}
     return {"ok": True, "paused": orch.paused, "speed": orch.speed}
+
+
+@app.post("/api/control/race/{race_id}")
+async def switch_race(race_id: str) -> dict:
+    if not orch:
+        return {"ok": False, "error": "starting"}
+    ok = await orch.switch_race(race_id)
+    return {"ok": ok, "circuit": orch.source.meta.name}
 
 
 @app.websocket("/ws")

@@ -65,8 +65,23 @@ it falls back to a deterministic synthetic race and says so in the header.
 | `DIRECTOR_COOLDOWN_S` | `13` | Wall seconds between director calls |
 | `DIRECTOR_TIMEOUT_S` | `4` | Deadline before falling back |
 | `GRAFANA_URL` / `GRAFANA_TOKEN` | — | Any Grafana, local or Cloud |
-| `RACE_YEAR` / `RACE_EVENT` | `2023` / `Monza` | Anything FastF1 can fetch |
+| `RACE_YEAR` / `RACE_EVENT` | `2023` / `Italian Grand Prix` | Use full event names — "Spa" fuzzy-matches to the *Spanish* Grand Prix |
 | `REPLAY_SPEED` | `8.0` | Race seconds per wall second |
+
+## Circuits
+
+Four 2023 races ship in the image and can be switched at runtime from the
+replay controls in the footer: **Monza** (flat-out, two DRS zones), **Spa**
+(longest lap on the calendar), **Silverstone** (fast and flowing) and
+**Barcelona**. Corner markers come from circuit info; DRS zones are recovered
+from the DRS channel in car telemetry, since the zones are not published
+anywhere — Monza resolves to two, Spa to three, which is correct.
+
+They are baked in rather than fetched on demand because Cloud Build egress
+cannot reach the F1 timing API. Adding more means extending `RACES` in
+[`scripts/prefetch.py`](scripts/prefetch.py) and `CATALOGUE` in
+[`backend/data/source.py`](backend/data/source.py), then re-running prefetch
+locally before deploying. Each race is roughly 110 MB of cache.
 
 ## Deploying
 
@@ -89,6 +104,19 @@ in about 9 s and does not depend on the F1 timing API being reachable.
 
 Things that cost time, kept here because none of them are obvious and all of
 them fail quietly.
+
+**Timing owns lap count; geometry owns position.** Deriving race order by
+watching arc-length wrap around the centerline works while the field is
+bunched and fails once it spreads. At Monza everyone stays in a slipstream
+train, so it looked correct for weeks. At Spa the field is a lap wide by lap
+three, one crossing gets missed, and the actual leaders rank behind
+backmarkers — Albon "leading" a race Verstappen won. Mixing the two, official
+lap plus geometric fraction, is worse again: the centerline origin and the
+timing line are different points, so they disagree by a sliver every lap and
+the error alternates sign. Interpolating between official lap start times
+gives fractional race distance directly — monotonic by construction, exact at
+every boundary. Geometry keeps the job it is good at, which is drawing the car
+in the right place.
 
 **The centerline has to be exactly one lap.** Race order and every gap come
 from arc-length along a circuit centerline. Building it from a raw slice of
