@@ -80,6 +80,8 @@ class Orchestrator:
         )
         self._push_batch: list[tuple[str, dict, float]] = []
         self._running = False
+        self.paused = False
+        self.speed = settings.replay_speed
 
     # ------------------------------------------------------------------ log
     def _emit(self, kind: str, text: str, tier: str = "") -> None:
@@ -131,11 +133,34 @@ class Orchestrator:
         metrics.inc("gallery_pairings_scored_total", max(0, len(frame.cars) - 1))
         self.state.pairings_scored += max(0, len(frame.cars) - 1)
 
+    # ------------------------------------------------------------- transport
+    def set_paused(self, paused: bool) -> None:
+        self.paused = paused
+        self._emit("system", "replay paused" if paused else "replay resumed")
+
+    def set_speed(self, speed: float) -> None:
+        self.speed = max(0.5, min(40.0, float(speed)))
+        self._emit("system", f"replay speed {self.speed:g}x")
+
+    def seek_lap(self, lap: int) -> bool:
+        """Jump the replay to the start of a lap."""
+        seek = getattr(self.source, "seek_lap", None)
+        if seek is None:
+            return False
+        ok = seek(int(lap))
+        if ok:
+            # Gap history describes the old position on track; carrying it over
+            # makes the scorer read a jump as twenty cars converging at once.
+            self.scorer = TensionScorer()
+            self.guard.current = None
+            self.state.on_air = None
+            self._emit("system", f"jumped to lap {lap}")
+        return ok
+
     # ------------------------------------------------------------ the loop
     async def run(self) -> None:
         self._running = True
         dt = 1.0 / settings.tick_hz
-        race_dt = dt * settings.replay_speed
 
         metrics.describe("gallery_cuts_total", "counter", "World feed cuts, by tier")
         self._emit("system", f"source: {self.source.meta.source} · {self.source.meta.name}")
@@ -146,7 +171,7 @@ class Orchestrator:
         asyncio.create_task(self._push_loop())
 
         while self._running:
-            await self._replay(race_dt)
+            await self._replay(dt)
             if not self._running:
                 break
             # A real race is finite. Left alone the loop returns here, the feed
@@ -164,11 +189,17 @@ class Orchestrator:
             self._emit("system", "race complete — replaying from lights-out")
             log.info("replay exhausted, looping")
 
-    async def _replay(self, race_dt: float) -> None:
-        dt = 1.0 / settings.tick_hz
-        for frame in self.source.frames(race_dt):
+    async def _replay(self, dt: float) -> None:
+        # Speed is read through a callable so the transport can change it
+        # mid-race without restarting the generator.
+        for frame in self.source.frames(lambda: dt * self.speed):
             if not self._running:
                 return
+            # Hold here while paused rather than skipping frames, so resuming
+            # continues from the same moment instead of jumping ahead.
+            while self.paused and self._running:
+                self._publish(self.snapshot())
+                await asyncio.sleep(0.2)
             started = time.perf_counter()
 
             battles = self.scorer.score_frame(frame)
@@ -193,7 +224,7 @@ class Orchestrator:
             self.state.top_score = battles[0].score if battles else 0.0
 
             if self.guard.current:
-                self.director.note_airtime(self.guard.current, race_dt)
+                self.director.note_airtime(self.guard.current, dt * self.speed)
 
             await self._maybe_direct(frame, battles)
             self._publish(self.snapshot())
@@ -323,12 +354,15 @@ class Orchestrator:
             "director": {"tier": s.director_tier, "latency_ms": s.director_latency,
                          "model": settings.director_model,
                          "blocked": self.director.block_reason,
-                         "configured": settings.gemini_ready},
+                         "configured": settings.gemini_ready,
+                         "cache_hits": self.director.cache_hits,
+                         "cache_rate": round(self.director.cache_rate, 3)},
             "grafana": {"live": s.grafana_live, "url": grafana.dashboard_url,
                         "enabled": grafana.enabled,
                         "pushed": self.writer.sent,
                         "push_error": self.writer.last_error},
             "pairings_scored": s.pairings_scored,
+            "transport": {"paused": self.paused, "speed": self.speed},
             "hold": round(max(0.0, s.race_t - self.guard.since), 1) if self.guard.current else 0.0,
             "log": [{"t": round(e.t, 1), "kind": e.kind, "text": e.text, "tier": e.tier}
                     for e in self._log],

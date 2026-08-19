@@ -46,7 +46,7 @@ def smooth_closed(xy: np.ndarray, window: int = 21) -> np.ndarray:
 class Centerline:
     """A closed circuit centerline supporting arc-length projection."""
 
-    def __init__(self, xy: np.ndarray, n: int = 900):
+    def __init__(self, xy: np.ndarray, n: int = 900, rotation: float = 0.0):
         # Resample first, smooth second. A raw lap arrives at ~320 samples, and
         # smoothing that with a wide window rounds the chicanes off the circuit
         # before there are enough points to preserve them. Upsample to `n`, then
@@ -58,11 +58,27 @@ class Centerline:
         self.cum = np.concatenate([[0.0], np.cumsum(d)])
         self.length = float(self.cum[-1])
 
-        # Normalised copy in [0,1]^2 for the frontend, aspect ratio preserved.
-        lo, hi = self.pts.min(axis=0), self.pts.max(axis=0)
+        # Circuits are published at a conventional orientation; FastF1 carries
+        # the angle. Applying it also tends to lay the long axis horizontally,
+        # which is what the wide stage has room for.
+        pts = self.pts
+        if rotation:
+            th = np.deg2rad(rotation)
+            c, s = np.cos(th), np.sin(th)
+            centre = (pts.min(axis=0) + pts.max(axis=0)) / 2.0
+            rel = pts - centre
+            pts = np.column_stack([rel[:, 0] * c - rel[:, 1] * s,
+                                   rel[:, 0] * s + rel[:, 1] * c]) + centre
+
+        # Normalised for the frontend with aspect preserved. `bounds` is the
+        # box actually occupied — fitting a long thin circuit into a square
+        # wastes most of the stage, so the client fits this box instead.
+        lo, hi = pts.min(axis=0), pts.max(axis=0)
         span = float((hi - lo).max())
-        centred = self.pts - (lo + hi) / 2.0
+        centred = pts - (lo + hi) / 2.0
         self.norm = centred / span + 0.5
+        nlo, nhi = self.norm.min(axis=0), self.norm.max(axis=0)
+        self.bounds = [float(nlo[0]), float(nlo[1]), float(nhi[0]), float(nhi[1])]
 
     def project(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         """Arc-length (metres) of the nearest centerline point for each (x, y)."""

@@ -98,7 +98,8 @@ async def circuit() -> dict:
         return {"outline": []}
     meta = orch.source.meta
     return {"outline": orch.outline, "name": meta.name, "source": meta.source,
-            "corners": meta.corners, "drs_zones": meta.drs_zones}
+            "corners": meta.corners, "drs_zones": meta.drs_zones,
+            "bounds": meta.bounds}
 
 
 @app.get("/api/grafana")
@@ -125,6 +126,26 @@ async def health() -> dict:
     }
 
 
+@app.post("/api/control/{action}")
+async def control(action: str, value: float = 0) -> dict:
+    """Transport for the replay. The race loops continuously by design so a
+    visitor always lands on live action, but a demo needs to be able to stop it."""
+    if not orch:
+        return {"ok": False, "error": "starting"}
+    if action == "pause":
+        orch.set_paused(True)
+    elif action == "resume":
+        orch.set_paused(False)
+    elif action == "speed":
+        orch.set_speed(value)
+    elif action == "seek":
+        if not orch.seek_lap(int(value)):
+            return {"ok": False, "error": "lap out of range"}
+    else:
+        return {"ok": False, "error": f"unknown action {action}"}
+    return {"ok": True, "paused": orch.paused, "speed": orch.speed}
+
+
 @app.websocket("/ws")
 async def ws(sock: WebSocket) -> None:
     await sock.accept()
@@ -136,6 +157,7 @@ async def ws(sock: WebSocket) -> None:
         "name": orch.source.meta.name,
         "corners": orch.source.meta.corners,
         "drs_zones": orch.source.meta.drs_zones,
+        "bounds": orch.source.meta.bounds,
     })
     q = orch.subscribe()
     try:

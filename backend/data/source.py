@@ -59,6 +59,7 @@ class RaceMeta:
     source: str = "synthetic"
     corners: list = field(default_factory=list)   # [{n, x, y}] normalised
     drs_zones: list = field(default_factory=list) # [[start_frac, end_frac]]
+    bounds: list = field(default_factory=list)    # [minx, miny, maxx, maxy]
 
 
 class SyntheticSource:
@@ -73,6 +74,7 @@ class SyntheticSource:
             outline=self.cl.outline(),
             total_laps=total_laps,
             source="synthetic",
+            bounds=self.cl.bounds,
         )
         nums = ["1", "11", "16", "55", "44", "63", "4", "81", "14", "18",
                 "10", "31", "23", "22", "77", "24", "20", "27", "2", "3"]
@@ -101,14 +103,15 @@ class SyntheticSource:
         self.phase = self.rng.uniform(0, 6.28, 20)
         self.t = 0.0
 
-    def frames(self, dt: float) -> Iterator[Frame]:
+    def frames(self, dt) -> Iterator[Frame]:
         L = self.cl.length
         while True:
-            self.t += dt
+            step = dt() if callable(dt) else dt
+            self.t += step
             for i, c in enumerate(self.cars):
                 deg = 0.010 * max(0, c.tyre_age + self.t / 90.0 - 12)
                 lap_time = self.base_pace[i] + deg + 0.35 * np.sin(self.t / 26.0 + self.phase[i])
-                c.progress += dt / lap_time
+                c.progress += step / lap_time
                 c.speed = float(L / lap_time * 3.6 * (0.72 + 0.28 * np.sin(c.progress * 6.283 * 3)))
             yield self._assemble()
 
@@ -229,6 +232,7 @@ class FastF1Source:
             source="fastf1",
             corners=corners,
             drs_zones=drs,
+            bounds=self.cl.bounds,
         )
         self.i = 0
         log.info("loaded %s — %d drivers, %d frames", self.meta.name, len(self.cars), len(self.grid))
@@ -237,13 +241,19 @@ class FastF1Source:
     def _build_centerline(ses, pos, drivers) -> Centerline:
         """One clean lap of circuit geometry."""
         try:
+            rot = 0.0
+            try:
+                rot = float(ses.get_circuit_info().rotation or 0.0)
+            except Exception:  # noqa: BLE001
+                pass
             fastest = ses.laps.pick_fastest()
             if fastest is not None:
                 tel = fastest.get_pos_data()
                 xy = tel[["X", "Y"]].to_numpy()
                 if len(xy) > 120:
-                    log.info("centerline from fastest lap (%d samples)", len(xy))
-                    return Centerline(xy)
+                    log.info("centerline from fastest lap (%d samples, rotation %.0f)",
+                             len(xy), rot)
+                    return Centerline(xy, rotation=rot)
         except Exception as exc:  # noqa: BLE001
             log.warning("fastest-lap centerline failed (%s)", exc)
 
@@ -337,9 +347,19 @@ class FastF1Source:
         """Rewind to lights-out so the replay can loop."""
         self.i = 0
 
-    def frames(self, dt: float) -> Iterator[Frame]:
-        stride = max(1, int(round(dt / self.step)))
+    def seek_lap(self, lap: int) -> bool:
+        """Move the cursor to the first frame on the given lap."""
+        target = max(1, int(lap))
+        lead = max(self.prog.values(), key=lambda a: a[-1])
+        idx = int(np.searchsorted(lead, target - 1))
+        if 0 <= idx < len(self.grid):
+            self.i = idx
+            return True
+        return False
+
+    def frames(self, dt) -> Iterator[Frame]:
         while self.i < len(self.grid):
+            stride = max(1, int(round((dt() if callable(dt) else dt) / self.step)))
             t = float(self.grid[self.i])
             back = max(0, self.i - stride)
             span = max(1e-6, (self.i - back) * self.step)

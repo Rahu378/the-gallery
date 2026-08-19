@@ -45,7 +45,9 @@ class Settings:
     race_year: int = int(os.getenv("RACE_YEAR", "2023"))
     race_event: str = os.getenv("RACE_EVENT", "Monza")
     race_session: str = os.getenv("RACE_SESSION", "R")
-    replay_speed: float = _f("REPLAY_SPEED", 8.0)
+    # 8x put a Monza lap on screen in about eight seconds, which is too fast to
+    # follow a fight. 3x gives roughly half a minute a lap and stays watchable.
+    replay_speed: float = _f("REPLAY_SPEED", 3.0)
 
     # Director tuning
     tick_hz: float = _f("TICK_HZ", 10.0)

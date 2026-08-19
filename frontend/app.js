@@ -22,7 +22,7 @@
   };
 
   /* ───────── state ───────── */
-  var outline = [], corners = [], drsZones = [];
+  var outline = [], corners = [], drsZones = [], bounds = [0, 0, 1, 1];
   var prev = null, next = null, tPrev = 0, tNext = 0;
   var trails = {}, lastCutKey = "", latest = null;
   var selected = null;      // driver number the operator is tracking
@@ -38,6 +38,7 @@
         outline = msg.outline || [];
         corners = msg.corners || [];
         drsZones = msg.drs_zones || [];
+        if (msg.bounds && msg.bounds.length === 4) bounds = msg.bounds;
         el.mapName.textContent = msg.name || "—";
         return;
       }
@@ -98,8 +99,33 @@
          s.grafana.live ? "grafana live" : (s.grafana.enabled ? "grafana unreachable" : "grafana off"),
          s.grafana.live ? "on" : "warn");
 
-    paintTower(s); paintOnAir(s); paintBattles(s); paintMetrics(s); paintViews(s); paintFocus(s);
+    paintTower(s); paintOnAir(s); paintBattles(s); paintMetrics(s); paintViews(s); paintFocus(s); paintTransport(s);
     if (!logFrozen) paintLog(s);
+  }
+
+  /* Rows are built once and updated in place, never re-created.
+     Rebuilding the tower with innerHTML ten times a second destroyed the node
+     between mousedown and mouseup, so clicks were swallowed at random and a
+     driver would only select after several tries. Order is expressed with the
+     CSS order property so nothing moves in the DOM either. */
+  var rowEls = {};
+
+  function buildRow(num) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "row";
+    b.setAttribute("data-car", num);
+    b.innerHTML = '<span class="p"></span><span class="bar"></span>'
+      + '<span class="code"></span><span class="tyre"></span>'
+      + '<span class="gap"></span>'
+      + '<span class="delta"><span class="dbar"><i></i></span><span class="arw"></span></span>';
+    b._p = b.querySelector(".p"); b._bar = b.querySelector(".bar");
+    b._code = b.querySelector(".code"); b._tyre = b.querySelector(".tyre");
+    b._gap = b.querySelector(".gap"); b._dbar = b.querySelector(".dbar i");
+    b._arw = b.querySelector(".arw");
+    el.tower.appendChild(b);
+    rowEls[num] = b;
+    return b;
   }
 
   function paintTower(s) {
@@ -109,37 +135,47 @@
       if (b.score >= 0.4) { fighting[b.ahead_num] = 1; fighting[b.behind_num] = 1; }
     });
 
-    var html = "";
+    var seen = {};
     for (var i = 0; i < s.cars.length; i++) {
       var c = s.cars[i];
+      seen[c.num] = 1;
+      var r = rowEls[c.num] || buildRow(c.num);
+      r.style.order = c.pos;
+
       var lead = c.pos === 1;
       var gapTxt = lead ? "LEADER" : "+" + c.gap.toFixed(3);
-      var gapCls = lead ? "" : (c.gap <= 1.0 ? " drs" : (c.gap <= 2.2 ? " close" : ""));
-
-      // magnitude bar: full when nose-to-tail, empty at 3s+
+      var gapCls = "gap" + (lead ? "" : c.gap <= 1.0 ? " drs" : c.gap <= 2.2 ? " close" : "");
       var mag = lead ? 0 : Math.max(0, Math.min(1, 1 - c.gap / 3));
-      var magCol = c.gap <= 1.0 ? "var(--green)" : c.gap <= 2.2 ? "var(--yellow)" : "var(--ink-3)";
-      var arw = "flat", gly = "•";
-      if (!lead && c.closing > 0.006) { arw = "closing"; gly = "▲"; }
-      else if (!lead && c.closing < -0.006) { arw = "widening"; gly = "▼"; }
+      var magCol = c.gap <= 1.0 ? "var(--green)" : c.gap <= 2.2 ? "var(--amber)" : "var(--ink-3)";
+      var arw = "flat", gly = "\u2022";
+      if (!lead && c.closing > 0.006) { arw = "closing"; gly = "\u25B2"; }
+      else if (!lead && c.closing < -0.006) { arw = "widening"; gly = "\u25BC"; }
+
+      if (r._p.textContent !== String(c.pos)) r._p.textContent = c.pos;
+      if (r._bar.style.background !== c.color) r._bar.style.background = c.color;
+      if (r._code.textContent !== c.code) r._code.textContent = c.code;
+      var tyre = '<b class="' + c.tyre + '">' + (c.tyre || "\u2014").slice(0, 1) + "</b>" + c.age + "L";
+      if (r._tyre.innerHTML !== tyre) r._tyre.innerHTML = tyre;
+      if (r._gap.textContent !== gapTxt) r._gap.textContent = gapTxt;
+      if (r._gap.className !== gapCls) r._gap.className = gapCls;
+      r._dbar.style.width = Math.round(mag * 100) + "%";
+      r._dbar.style.background = magCol;
+      if (r._arw.textContent !== gly) r._arw.textContent = gly;
+      var arwCls = "arw " + arw;
+      if (r._arw.className !== arwCls) r._arw.className = arwCls;
 
       var cls = "row"
         + (c.num === live ? " live" : "")
         + (fighting[c.num] ? " fight" : "")
         + (selected === c.num ? " sel" : "")
         + (selected && selected !== c.num ? " dim" : "");
-
-      html += '<button type="button" class="' + cls + '" data-car="' + esc(c.num) + '">'
-        + '<span class="p">' + c.pos + "</span>"
-        + '<span class="bar" style="background:' + esc(c.color) + '"></span>'
-        + '<span class="code">' + esc(c.code) + "</span>"
-        + '<span class="tyre"><b class="' + esc(c.tyre) + '">' + esc((c.tyre || "—").slice(0, 1)) + "</b>" + c.age + "L</span>"
-        + '<span class="gap' + gapCls + '">' + gapTxt + "</span>"
-        + '<span class="delta"><span class="dbar"><i style="width:' + Math.round(mag * 100) + "%;background:" + magCol + '"></i></span>'
-        + '<span class="arw ' + arw + '">' + gly + "</span></span>"
-        + "</button>";
+      if (r.className !== cls) r.className = cls;
     }
-    el.tower.innerHTML = html;
+
+    Object.keys(rowEls).forEach(function (num) {
+      if (!seen[num]) { rowEls[num].remove(); delete rowEls[num]; }
+    });
+    el.towerCount.textContent = s.cars.length + " cars";
   }
 
   function paintOnAir(s) {
@@ -230,6 +266,51 @@
     logFrozen = false; el.logHint.textContent = "live"; el.logHint.classList.remove("frozen");
     if (latest) paintLog(latest);
   });
+
+  /* ───────── transport ───────── */
+  var seeking = false;
+
+  function control(action, value) {
+    var q = value === undefined ? "" : "?value=" + encodeURIComponent(value);
+    return fetch("/api/control/" + action + q, { method: "POST" })
+      .then(function (r) { return r.json(); })
+      .catch(function () { return { ok: false }; });
+  }
+
+  $("tPlay").addEventListener("click", function () {
+    var paused = latest && latest.transport && latest.transport.paused;
+    control(paused ? "resume" : "pause");
+  });
+
+  [].forEach.call(document.querySelectorAll("[data-speed]"), function (b) {
+    b.addEventListener("click", function () {
+      control("speed", b.getAttribute("data-speed"));
+    });
+  });
+
+  var lapEl = $("tLap");
+  lapEl.addEventListener("input", function () {
+    seeking = true;
+    $("tLapV").textContent = lapEl.value;
+  });
+  lapEl.addEventListener("change", function () {
+    control("seek", lapEl.value).then(function () { seeking = false; });
+  });
+
+  function paintTransport(s) {
+    var tr = s.transport || { paused: false, speed: 3 };
+    var b = $("tPlay");
+    b.textContent = tr.paused ? "▶ Resume" : "❚❚ Pause";
+    b.classList.toggle("paused", !!tr.paused);
+    [].forEach.call(document.querySelectorAll("[data-speed]"), function (x) {
+      x.classList.toggle("on", Number(x.getAttribute("data-speed")) === tr.speed);
+    });
+    if (!seeking) {
+      lapEl.max = s.total_laps || 51;
+      lapEl.value = s.lap;
+      $("tLapV").textContent = s.lap;
+    }
+  }
 
   /* ───────── driver focus card ───────── */
   function paintFocus(s) {
@@ -417,11 +498,12 @@
   var FOLLOW_ZOOM = 3.2;
 
   function stepCamera(cars) {
+    var cx = (bounds[0] + bounds[2]) / 2, cy = (bounds[1] + bounds[3]) / 2;
     if (selected) {
       var me = cars && cars.filter(function (c) { return c.num === selected; })[0];
       if (me) { camT.z = FOLLOW_ZOOM; camT.x = me.x; camT.y = me.y; }
     } else {
-      camT.z = 1; camT.x = 0.5; camT.y = 0.5;
+      camT.z = 1; camT.x = cx; camT.y = cy;
     }
     var k = reduced ? 1 : 0.12;
     cam.z += (camT.z - cam.z) * k;
@@ -431,16 +513,22 @@
   }
 
   function fitter() {
-    var pad = Math.max(34, Math.min(W, H) * 0.05);
-    var side = Math.min(W - pad * 2, H - pad * 2);
-    mapScale = Math.max(1, Math.min(2.4, side / 620)) * Math.min(1.7, cam.z);
-    var ox = (W - side) / 2, oy = (H - side) / 2;
+    var pad = Math.max(28, Math.min(W, H) * 0.04);
+    var availW = W - pad * 2, availH = H - pad * 2;
+
+    /* Fit the box the circuit actually occupies rather than a square. Monza is
+       2:1 after rotation, so square-fitting spent half the stage on margin. */
+    var bw = Math.max(0.02, bounds[2] - bounds[0]);
+    var bh = Math.max(0.02, bounds[3] - bounds[1]);
+    var scale = Math.min(availW / bw, availH / bh);
+    mapScale = Math.max(1, Math.min(2.6, scale / 1100)) * Math.min(1.7, cam.z);
+
     return function (x, y) {
-      var nx = (x - cam.x) * cam.z + 0.5;
-      var ny = (y - cam.y) * cam.z + 0.5;
-      return [ox + nx * side, oy + ny * side];
+      return [W / 2 + (x - cam.x) * cam.z * scale,
+              H / 2 + (y - cam.y) * cam.z * scale];
     };
   }
+
   function px(n) { return n * mapScale; }
   function lerp(a, b, k) { return a + (b - a) * k; }
 
