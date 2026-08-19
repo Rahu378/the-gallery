@@ -98,7 +98,7 @@
          s.grafana.live ? "grafana live" : (s.grafana.enabled ? "grafana unreachable" : "grafana off"),
          s.grafana.live ? "on" : "warn");
 
-    paintTower(s); paintOnAir(s); paintBattles(s);
+    paintTower(s); paintOnAir(s); paintBattles(s); paintMetrics(s); paintViews(s);
     if (!logFrozen) paintLog(s);
   }
 
@@ -231,6 +231,57 @@
     if (latest) paintLog(latest);
   });
 
+  /* ───────── view tabs ───────── */
+  document.getElementById("tabs").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-view]");
+    if (!b) return;
+    [].forEach.call(document.querySelectorAll(".tab"), function (x) { x.classList.remove("on"); });
+    b.classList.add("on");
+    document.body.setAttribute("data-view", b.getAttribute("data-view"));
+    if (latest) paintViews(latest);
+  });
+  document.body.setAttribute("data-view", "control");
+
+  function paintViews(s) {
+    var link = $("dashLink");
+    if (link) {
+      if (s.grafana.url) { link.href = s.grafana.url; link.textContent = "Open the dashboard →"; }
+      else { link.removeAttribute("href"); link.textContent = "dashboard not provisioned"; }
+    }
+    var kv = $("monKv");
+    if (kv) {
+      kv.innerHTML = [
+        ["grafana reachable", s.grafana.live ? "yes" : "no"],
+        ["series pushed", (s.grafana.pushed || 0).toLocaleString()],
+        ["push error", s.grafana.push_error || "none"],
+        ["pairings scored", (s.pairings_scored || 0).toLocaleString()],
+        ["director tier", s.director.tier],
+        ["director latency", s.director.latency_ms + " ms"],
+        ["race source", s.source],
+        ["lap", s.lap + " / " + s.total_laps]
+      ].map(function (r) { return "<dt>" + r[0] + "</dt><dd>" + esc(r[1]) + "</dd>"; }).join("");
+    }
+  }
+
+  /* ───────── metric strip ───────── */
+  function paintMetrics(s) {
+    var d = s.director, model = isModelTier(d.tier);
+    var q = $("mQuota"), qs = $("mQuotaSub");
+    if (d.blocked) { q.textContent = "BACKING OFF"; q.className = "m-v warn"; qs.textContent = d.blocked; }
+    else { q.textContent = "OK"; q.className = "m-v good"; qs.textContent = "within quota"; }
+
+    var lat = $("mLat");
+    lat.textContent = d.latency_ms ? (d.latency_ms / 1000).toFixed(2) + "s" : "—";
+    lat.className = "m-v " + (!d.latency_ms ? "" : d.latency_ms < 2500 ? "good" : "warn");
+
+    var tier = $("mTier"), ts = $("mTierSub");
+    tier.textContent = model ? "GEMINI" : "DETERMINISTIC";
+    tier.className = "m-v " + (model ? "live" : "warn");
+    ts.textContent = model ? d.model : (d.tier === "timeout" ? "model exceeded deadline" : "fallback active");
+
+    $("mPushed").textContent = (s.grafana.pushed || 0).toLocaleString();
+  }
+
   /* ───────── explain sheet ───────── */
   var EXPLAIN = {
     source: { eyebrow: "Data source", title: "Where the race comes from",
@@ -245,6 +296,8 @@
       body: "<p>The single shot going out. One camera, one global audience — a pass that happens off screen is lost.</p><p>The card shows which car is live, who they are defending from, the gap, the score that won the cut, and the commentary line the director wrote for it.</p>" },
     fastf1: { eyebrow: "Data source", title: "FastF1",
       body: "<p>Open library for Formula 1 timing and telemetry. Supplies position samples, lap and sector times, tyre compound and age, and the circuit geometry used for the corner markers.</p><p>DRS zones are not published anywhere, so they are recovered from the DRS channel in car telemetry and mapped back onto the track.</p>" },
+    quota: { eyebrow: "Capacity", title: "Model quota",
+      body: "<p>Vertex serves Gemini from dynamic shared quota — regional capacity rather than a fixed per-minute ceiling. A 429 arrives with no number and no retry delay attached.</p><p>When one lands, the director backs off 6-10 seconds with jitter and every decision in that window is taken deterministically and labelled as such. A fixed thirty-second backoff, which is the obvious default, throws away most of a race for a transient blip.</p>" },
     grafana: { eyebrow: "Observability", title: "Grafana",
       body: "<p>The app provisions its own dashboard over the Grafana HTTP API on startup, installs a battle-imminent alert rule, and writes every cut onto the race timeline as an annotation.</p><p>Metrics go up by Prometheus <code>remote_write</code> straight from this process — a hosted Grafana has no route to scrape it, and pushing removes the need for anything to sit in between.</p>" }
   };

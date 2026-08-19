@@ -130,7 +130,25 @@ async def ws(sock: WebSocket) -> None:
 
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(FRONTEND / "index.html")
+    return FileResponse(
+        FRONTEND / "index.html",
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
 
 
-app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
+class RevalidatingStatic(StaticFiles):
+    """Serve assets with must-revalidate.
+
+    Without an explicit Cache-Control the browser applies heuristic caching, so
+    a viewer who saw an earlier revision keeps the old CSS and JS after a
+    deploy — the page renders with stale layout against fresh data and looks
+    broken. ETags still make the revalidation cheap.
+    """
+
+    async def get_response(self, path: str, scope):  # type: ignore[override]
+        resp = await super().get_response(path, scope)
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return resp
+
+
+app.mount("/static", RevalidatingStatic(directory=FRONTEND), name="static")

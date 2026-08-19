@@ -12,6 +12,11 @@
 
   <header class="top">
     <span class="brand"><i class="mark"></i>THE GALLERY</span>
+    <nav class="tabs" id="tabs">
+      <button type="button" class="tab on" data-view="control">Control</button>
+      <button type="button" class="tab" data-view="monitors">Monitors</button>
+      <button type="button" class="tab" data-view="operator">Operator</button>
+    </nav>
     <span class="sep">│</span>
     <span><span class="k">circuit</span> <span class="v" id="circuit">—</span></span>
     <span><span class="k">lap</span> <span class="v" id="lap">—</span></span>
@@ -60,6 +65,29 @@
         </div>
       </div>
 
+      <div class="metrics" id="metrics">
+        <button type="button" class="metric" data-explain="quota">
+          <span class="m-k">Model quota</span>
+          <span class="m-v" id="mQuota">—</span>
+          <span class="m-s" id="mQuotaSub">—</span>
+        </button>
+        <button type="button" class="metric" data-explain="director">
+          <span class="m-k">Model latency</span>
+          <span class="m-v" id="mLat">—</span>
+          <span class="m-s">per decision</span>
+        </button>
+        <button type="button" class="metric" data-explain="cutguard">
+          <span class="m-k">Decision source</span>
+          <span class="m-v" id="mTier">—</span>
+          <span class="m-s" id="mTierSub">—</span>
+        </button>
+        <button type="button" class="metric" data-explain="grafana">
+          <span class="m-k">Series pushed</span>
+          <span class="m-v" id="mPushed">—</span>
+          <span class="m-s">to grafana cloud</span>
+        </button>
+      </div>
+
       <div class="stage">
         <canvas id="map"></canvas>
         <div class="stage-tag">
@@ -74,6 +102,48 @@
           <span><i class="sw drs"></i>DRS zone</span>
         </div>
         <div class="flash" id="flash"></div>
+      </div>
+
+      <div class="viewpane" id="viewMonitors">
+        <div class="vcard">
+          <div class="vk">Grafana Cloud</div>
+          <p>The app provisions its own dashboard on startup, installs a battle-imminent alert rule, writes every cut onto the race timeline as an annotation, and pushes metrics by Prometheus <code>remote_write</code>.</p>
+          <p><a id="dashLink" href="#" target="_blank" rel="noopener">Open the dashboard →</a></p>
+        </div>
+        <div class="vcard">
+          <div class="vk">Live counters</div>
+          <dl class="kv" id="monKv"></dl>
+        </div>
+        <div class="vcard">
+          <div class="vk">Raw endpoints</div>
+          <p><a href="/metrics" target="_blank" rel="noopener">/metrics</a> — Prometheus exposition ·
+             <a href="/api/health" target="_blank" rel="noopener">/api/health</a> — integration status ·
+             <a href="/api/grafana" target="_blank" rel="noopener">/api/grafana</a> — every call made to Grafana</p>
+        </div>
+      </div>
+
+      <div class="viewpane" id="viewOperator">
+        <div class="vcard">
+          <div class="vk">Pipeline</div>
+          <div class="flow">
+            <button type="button" class="st" data-explain="fastf1">FastF1</button><span class="ar">→</span>
+            <button type="button" class="st" data-explain="tension">tension scorer</button><span class="ar">→</span>
+            <button type="button" class="st llm" data-explain="director">director · Gemini/ADK</button><span class="ar">→</span>
+            <button type="button" class="st" data-explain="cutguard">cut guard</button><span class="ar">→</span>
+            <button type="button" class="st" data-explain="feed">world feed</button>
+          </div>
+          <p style="margin-top:14px">Click any stage for what it does and its current numbers.</p>
+        </div>
+        <div class="vcard">
+          <div class="vk">Reading the colours</div>
+          <p><b style="color:var(--cyan)">Cyan</b> means a Gemini decision is live. <b style="color:var(--orange)">Orange</b> marks the cut itself — the shot on air. <b style="color:var(--amber)">Amber</b> means the system is running deterministic: the model timed out, hit quota, or has no credentials. <b style="color:var(--green)">Green</b> is healthy state and DRS range.</p>
+          <p>A deterministic cut is never shown in cyan. If the colour says Gemini chose, Gemini chose.</p>
+        </div>
+        <div class="vcard">
+          <div class="vk">Operator controls</div>
+          <p>Click a driver in the timing tower or a contested position to track them — the map rings that car, dims the rest of the field, and the decision log filters to entries mentioning them. Click again or press <code>Esc</code> to clear.</p>
+          <p>Hovering the decision log freezes it so an entry can be read without the list reordering.</p>
+        </div>
       </div>
     </section>
 
