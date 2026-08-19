@@ -68,6 +68,23 @@ it falls back to a deterministic synthetic race and says so in the header.
 | `RACE_YEAR` / `RACE_EVENT` | `2023` / `Italian Grand Prix` | Use full event names — "Spa" fuzzy-matches to the *Spanish* Grand Prix |
 | `REPLAY_SPEED` | `8.0` | Race seconds per wall second |
 
+## Two views
+
+The map has a **2D** and a **3D** toggle, bottom right. 2D is the default and
+the operating view — top-down is objectively the better instrument for reading
+gaps and order, which is why every timing screen uses it.
+
+3D exists to show the one thing 2D cannot: elevation. The Z channel in
+position telemetry gives Spa a 102 m climb through Eau Rouge and Raidillon,
+and Monza 12 m across the entire lap. Both figures are measured, not styled.
+Selecting a driver drops the camera to track level and chases them, so the
+terrain is seen from the side rather than flattened.
+
+Three.js r160 is vendored (MIT) and loaded on demand — it is 1.2 MB and most
+viewers never open 3D. Glow is done with additive sprites scaled against
+camera distance rather than a post-processing pass, which keeps the dependency
+to three core.
+
 ## Circuits
 
 Four 2023 races ship in the image and can be switched at runtime from the

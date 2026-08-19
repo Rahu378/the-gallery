@@ -554,3 +554,29 @@ body[data-view="operator"] #viewOperator { display: block; }
 }
 .tsel:hover { border-color: rgba(0,229,255,.45); }
 .tsel:disabled { opacity: .5; cursor: wait; }
+
+
+/* ─────────── 2D / 3D toggle ─────────── */
+.gl-host { position: absolute; inset: 0; }
+.gl-host[hidden] { display: none; }
+.gl-host .gl { display: block; width: 100%; height: 100%; }
+
+.viewtoggle {
+  position: absolute; right: 16px; bottom: 14px; z-index: 5;
+  display: flex; align-items: center; gap: 6px;
+}
+.vt {
+  padding: 6px 12px; border-radius: 4px;
+  border: 1px solid var(--glass-line); background: rgba(26,29,38,.86);
+  backdrop-filter: blur(10px);
+  color: var(--ink-3); font-family: var(--mono); font-size: 11px;
+  letter-spacing: .16em; transition: all .16s;
+}
+.vt:hover { color: var(--ink); border-color: rgba(0,229,255,.4); }
+.vt.on { color: var(--cyan); border-color: rgba(0,229,255,.55); background: rgba(0,229,255,.12); }
+.vt-note {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-3); margin-left: 4px;
+}
+@media (min-width: 1800px) { .vt { font-size: 12.5px; padding: 8px 15px; } .vt-note { font-size: 12px; } }
+@media (min-width: 2400px) { .vt { font-size: 15px; padding: 10px 19px; } .vt-note { font-size: 14px; } }

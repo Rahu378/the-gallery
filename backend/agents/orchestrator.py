@@ -256,7 +256,8 @@ class Orchestrator:
             self.state.total_laps = frame.total_laps or self.state.total_laps
             self.state.cars = [
                 {"num": c.num, "code": c.code, "team": c.team, "color": c.color,
-                 "x": round(c.x, 5), "y": round(c.y, 5), "pos": c.pos,
+                 "x": round(c.x, 5), "y": round(c.y, 5), "z": round(c.z, 5),
+                 "pos": c.pos,
                  "gap": round(c.gap_ahead, 3), "closing": round(c.closing, 4),
                  "tyre": c.tyre, "age": c.tyre_age,
                  "speed": round(c.speed, 1),

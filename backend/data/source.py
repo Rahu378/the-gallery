@@ -39,6 +39,7 @@ class Car:
     tyre: str = "MEDIUM"
     tyre_age: int = 0
     speed: float = 0.0
+    z: float = 0.0
 
 
 @dataclass
@@ -60,6 +61,7 @@ class RaceMeta:
     corners: list = field(default_factory=list)   # [{n, x, y}] normalised
     drs_zones: list = field(default_factory=list) # [[start_frac, end_frac]]
     bounds: list = field(default_factory=list)    # [minx, miny, maxx, maxy]
+    elevation_m: float = 0.0                     # real elevation change, metres
 
 
 class SyntheticSource:
@@ -75,6 +77,7 @@ class SyntheticSource:
             total_laps=total_laps,
             source="synthetic",
             bounds=self.cl.bounds,
+            elevation_m=round(self.cl.elev_range_m, 1),
         )
         nums = ["1", "11", "16", "55", "44", "63", "4", "81", "14", "18",
                 "10", "31", "23", "22", "77", "24", "20", "27", "2", "3"]
@@ -120,8 +123,10 @@ class SyntheticSource:
         lap = max(1, int(order[0].progress) + 1) if order[0].progress > 0 else 1
         for i, c in enumerate(order):
             c.pos = i + 1
-            sx, sy = self.cl.point_at((c.progress % 1.0) * self.cl.length)
+            arc = (c.progress % 1.0) * self.cl.length
+            sx, sy = self.cl.point_at(arc)
             c.x, c.y = sx, sy
+            c.z = self.cl.elevation_at(arc)
             if i == 0:
                 c.gap_ahead = 0.0
             else:
@@ -237,6 +242,7 @@ class FastF1Source:
             corners=corners,
             drs_zones=drs,
             bounds=self.cl.bounds,
+            elevation_m=round(self.cl.elev_range_m, 1),
         )
         self.i = 0
         log.info("loaded %s — %d drivers, %d frames", self.meta.name, len(self.cars), len(self.grid))
@@ -296,7 +302,8 @@ class FastF1Source:
             fastest = ses.laps.pick_fastest()
             if fastest is not None:
                 tel = fastest.get_pos_data()
-                xy = tel[["X", "Y"]].to_numpy()
+                cols = ["X", "Y", "Z"] if "Z" in tel.columns else ["X", "Y"]
+                xy = tel[cols].to_numpy()
                 if len(xy) > 120:
                     log.info("centerline from fastest lap (%d samples, rotation %.0f)",
                              len(xy), rot)
@@ -309,7 +316,9 @@ class FastF1Source:
             try:
                 dl = ses.laps[ses.laps["DriverNumber"].astype(str) == d]
                 mid = dl.iloc[len(dl) // 2]
-                xy = mid.get_pos_data()[["X", "Y"]].to_numpy()
+                mp = mid.get_pos_data()
+                cols = ["X", "Y", "Z"] if "Z" in mp.columns else ["X", "Y"]
+                xy = mp[cols].to_numpy()
                 if len(xy) > 120:
                     log.info("centerline from car %s mid-race lap", d)
                     return Centerline(xy)
@@ -419,8 +428,10 @@ class FastF1Source:
                     * (self.cl.length / UNITS_PER_METRE) * 3.6
                 )
                 c.progress = p
-                sx, sy = self.cl.point_at(float(self.arc[c.num][self.i]) * self.cl.length)
+                arc = float(self.arc[c.num][self.i]) * self.cl.length
+                sx, sy = self.cl.point_at(arc)
                 c.x, c.y = sx, sy
+                c.z = self.cl.elevation_at(arc)
                 c.tyre, c.tyre_age = self._tyre_at(c.num, t)
             order = sorted(self.cars, key=lambda c: -c.progress)
             for k, c in enumerate(order):

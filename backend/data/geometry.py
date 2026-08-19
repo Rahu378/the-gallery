@@ -10,21 +10,26 @@ import numpy as np
 
 
 def resample_closed(xy: np.ndarray, n: int = 900) -> np.ndarray:
-    """Resample a closed polyline to `n` evenly spaced points."""
+    """Resample a closed polyline to `n` evenly spaced points.
+
+    Accepts 2 or 3 columns; spacing is always measured in the XY plane so a
+    steep climb does not stretch the sampling, and Z rides along.
+    """
     pts = np.asarray(xy, dtype=float)
-    if not np.allclose(pts[0], pts[-1]):
+    if not np.allclose(pts[0, :2], pts[-1, :2]):
         pts = np.vstack([pts, pts[0]])
 
-    seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+    dims = pts.shape[1]
+    seg = np.linalg.norm(np.diff(pts[:, :2], axis=0), axis=1)
     s = np.concatenate([[0.0], np.cumsum(seg)])
     total = s[-1]
     if total <= 0:
         raise ValueError("degenerate centerline")
 
     targets = np.linspace(0.0, total, n, endpoint=False)
-    out = np.empty((n, 2))
-    out[:, 0] = np.interp(targets, s, pts[:, 0])
-    out[:, 1] = np.interp(targets, s, pts[:, 1])
+    out = np.empty((n, dims))
+    for d in range(dims):
+        out[:, d] = np.interp(targets, s, pts[:, d])
     return out
 
 
@@ -37,7 +42,7 @@ def smooth_closed(xy: np.ndarray, window: int = 21) -> np.ndarray:
     k = np.ones(window) / window
     pad = window // 2
     out = np.empty_like(xy)
-    for d in range(2):
+    for d in range(xy.shape[1]):
         col = np.concatenate([xy[-pad:, d], xy[:, d], xy[:pad, d]])
         out[:, d] = np.convolve(col, k, mode="valid")
     return out
@@ -51,8 +56,12 @@ class Centerline:
         # smoothing that with a wide window rounds the chicanes off the circuit
         # before there are enough points to preserve them. Upsample to `n`, then
         # smooth over ~1% of the lap — enough to kill GPS jitter, not corners.
-        self.pts = smooth_closed(resample_closed(np.asarray(xy, float), n),
-                                 window=max(3, n // 110))
+        raw = smooth_closed(resample_closed(np.asarray(xy, float), n),
+                            window=max(3, n // 110))
+        # Elevation is carried separately: everything downstream works in the
+        # XY plane, and Z only exists to draw the circuit in three dimensions.
+        self.elev = raw[:, 2].copy() if raw.shape[1] > 2 else np.zeros(len(raw))
+        self.pts = raw[:, :2]
         d = np.linalg.norm(np.diff(np.vstack([self.pts, self.pts[0]]), axis=0), axis=1)
         self.seg_len = d
         self.cum = np.concatenate([[0.0], np.cumsum(d)])
@@ -79,6 +88,11 @@ class Centerline:
         self.norm = centred / span + 0.5
         nlo, nhi = self.norm.min(axis=0), self.norm.max(axis=0)
         self.bounds = [float(nlo[0]), float(nlo[1]), float(nhi[0]), float(nhi[1])]
+
+        # Elevation normalised against the same span as X and Y, so the circuit
+        # keeps its true proportions in 3D. Monza stays flat, Spa does not.
+        self.elev_norm = (self.elev - self.elev.mean()) / span
+        self.elev_range_m = float((self.elev.max() - self.elev.min()) / 10.0)
 
     def project(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         """Arc-length (metres) of the nearest centerline point for each (x, y)."""
@@ -131,7 +145,13 @@ class Centerline:
         return float(a[0] + (b[0] - a[0]) * frac), float(a[1] + (b[1] - a[1]) * frac)
 
     def outline(self) -> list[list[float]]:
-        return [[round(float(p[0]), 5), round(float(p[1]), 5)] for p in self.norm]
+        """Normalised [x, y, z] per sample. Z is real elevation, same scale."""
+        return [[round(float(p[0]), 5), round(float(p[1]), 5), round(float(z), 5)]
+                for p, z in zip(self.norm, self.elev_norm)]
+
+    def elevation_at(self, s: float) -> float:
+        i = int((s % self.length) / self.length * len(self.elev_norm))
+        return float(self.elev_norm[min(i, len(self.elev_norm) - 1)])
 
 
 def unwrap_progress(s: np.ndarray, length: float) -> np.ndarray:

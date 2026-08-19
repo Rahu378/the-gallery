@@ -40,6 +40,8 @@
         corners = msg.corners || [];
         drsZones = msg.drs_zones || [];
         if (msg.bounds && msg.bounds.length === 4) bounds = msg.bounds;
+        if (msg.elevation_m) $("vtNote").textContent = "+" + Math.round(msg.elevation_m) + " m elevation";
+        if (view3d) view3d.setCircuit(outline, drsZones, bounds);
         el.mapName.textContent = msg.name || "—";
         return;
       }
@@ -103,6 +105,7 @@
          s.grafana.live ? "on" : "warn");
 
     paintTower(s); paintOnAir(s); paintBattles(s); paintMetrics(s); paintViews(s); paintFocus(s); paintTransport(s); refreshCircuit(s);
+    if (view3d && mapMode === "3d") view3d.setState(s, selected);
     if (!logFrozen) paintLog(s);
   }
 
@@ -270,6 +273,43 @@
     if (latest) paintLog(latest);
   });
 
+  /* ───────── 2D / 3D ───────── */
+  var mapMode = "2d", view3d = null, glHost = $("glHost");
+
+  function load3D() {
+    if (view3d) return Promise.resolve(view3d);
+    // Loaded on demand — most viewers never open 3D and three.js is 1.2 MB.
+    return import("/static/view3d.js").then(function (m) {
+      view3d = m;
+      m.init(glHost);
+      m.setCircuit(outline, drsZones, bounds);
+      if (latest) m.setState(latest, selected);
+      return m;
+    });
+  }
+
+  function setMapMode(mode) {
+    mapMode = mode;
+    [].forEach.call(document.querySelectorAll("[data-map]"), function (b) {
+      b.classList.toggle("on", b.getAttribute("data-map") === mode);
+    });
+    var is3 = mode === "3d";
+    glHost.hidden = !is3;
+    document.getElementById("map").style.visibility = is3 ? "hidden" : "";
+    if (is3) {
+      load3D().then(function (m) { m.resize(glHost); }).catch(function (e) {
+        $("vtNote").textContent = "3d unavailable";
+        console.error(e);
+      });
+    }
+  }
+
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-map]");
+    if (b) setMapMode(b.getAttribute("data-map"));
+  });
+  addEventListener("resize", function () { if (view3d && mapMode === "3d") view3d.resize(glHost); });
+
   /* ───────── transport ───────── */
   var seeking = false;
 
@@ -333,6 +373,8 @@
       if (d.bounds && d.bounds.length === 4) bounds = d.bounds;
       trails = {};
       el.mapName.textContent = d.name || "—";
+      $("vtNote").textContent = d.elevation_m ? "+" + Math.round(d.elevation_m) + " m elevation" : "";
+      if (view3d) view3d.setCircuit(outline, drsZones, bounds);
     }).catch(function () {});
   }
 

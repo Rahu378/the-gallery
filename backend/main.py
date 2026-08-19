@@ -99,7 +99,7 @@ async def circuit() -> dict:
     meta = orch.source.meta
     return {"outline": orch.outline, "name": meta.name, "source": meta.source,
             "corners": meta.corners, "drs_zones": meta.drs_zones,
-            "bounds": meta.bounds}
+            "bounds": meta.bounds, "elevation_m": meta.elevation_m}
 
 
 @app.get("/api/grafana")
@@ -168,6 +168,7 @@ async def ws(sock: WebSocket) -> None:
         "corners": orch.source.meta.corners,
         "drs_zones": orch.source.meta.drs_zones,
         "bounds": orch.source.meta.bounds,
+        "elevation_m": orch.source.meta.elevation_m,
     })
     q = orch.subscribe()
     try:
