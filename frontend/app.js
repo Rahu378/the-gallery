@@ -67,8 +67,10 @@
 
   function select(num) {
     selected = (selected === num) ? null : num;
-    el.selNote.textContent = selected ? "tracking car " + selected + " — click again to clear"
-                                      : "click a driver to track them";
+    // Only speaks when there is something to say. The idle prompt was
+    // permanent furniture telling you what you had already worked out.
+    el.selNote.hidden = !selected;
+    el.selNote.textContent = selected ? "tracking car " + selected + " — click again to clear" : "";
     el.selNote.classList.toggle("active", !!selected);
     if (latest) paint(latest);
   }

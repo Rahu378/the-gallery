@@ -108,7 +108,8 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   font-family: var(--mono); font-size: 9px; letter-spacing: .14em;
   text-transform: uppercase; color: var(--ink-3); flex-shrink: 0;
 }
-.col-f.active { color: var(--cyan); }
+.col-f.active { color: var(--sel); }
+.col-f[hidden] { display: none; }
 
 /* ───────────────── timing tower ───────────────── */
 .tower { overflow-y: auto; overflow-x: hidden; flex: 1; display: flex; flex-direction: column; }
