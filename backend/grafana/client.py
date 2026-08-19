@@ -109,7 +109,8 @@ class GrafanaClient:
         })
         del self.calls[:-40]
 
-    async def _request(self, method: str, path: str, body: Any = None) -> dict | None:
+    async def _request(self, method: str, path: str, body: Any = None,
+                       quiet: bool = False) -> dict | None:
         if not self.enabled:
             self._record(method, path, body, sent=False, result="no GRAFANA_TOKEN")
             return None
@@ -118,8 +119,12 @@ class GrafanaClient:
             ok = r.status_code < 300
             self._record(method, path, body, sent=True, result=f"{r.status_code}")
             if not ok:
-                self.last_error = f"{method} {path} → {r.status_code} {r.text[:160]}"
-                log.warning(self.last_error)
+                msg = f"{method} {path} → {r.status_code} {r.text[:160]}"
+                if quiet:
+                    log.debug(msg)
+                else:
+                    self.last_error = msg
+                    log.warning(msg)
                 return None
             return r.json() if r.content else {}
         except Exception as exc:  # noqa: BLE001
@@ -173,16 +178,29 @@ class GrafanaClient:
         return made.get("uid") if made else None
 
     async def _prometheus_uid(self) -> str | None:
+        # Probe the conventional names first. A miss is normal — Grafana Cloud
+        # names its own `grafanacloud-<stack>-prom` — so these are looked up
+        # quietly rather than logged as failures.
         for name in ("Prometheus", "prometheus"):
-            ds = await self._request("GET", f"/api/datasources/name/{name}")
+            ds = await self._request("GET", f"/api/datasources/name/{name}", quiet=True)
             if ds and ds.get("uid"):
                 return ds["uid"]
+
         all_ds = await self._request("GET", "/api/datasources")
-        if isinstance(all_ds, list):
-            for d in all_ds:
-                if d.get("type") == "prometheus":
-                    return d.get("uid")
-        return None
+        if not isinstance(all_ds, list):
+            return None
+        proms = [d for d in all_ds if d.get("type") == "prometheus"]
+        if not proms:
+            return None
+        # A Grafana Cloud stack ships several prometheus datasources, and one of
+        # them — grafanacloud-usage — holds billing telemetry, not yours. Taking
+        # the first match provisions a dashboard that queries the wrong store
+        # and renders empty with no error anywhere.
+        for d in proms:
+            name = (d.get("name") or "").lower()
+            if "usage" not in name and "cardinality" not in name:
+                return d.get("uid")
+        return proms[0].get("uid")
 
     async def ensure_alert_rule(self) -> bool:
         """Install the battle-imminent alert. Idempotent."""
