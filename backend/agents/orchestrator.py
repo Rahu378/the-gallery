@@ -123,6 +123,7 @@ class Orchestrator:
         self._emit("system", f"director: {self.director.tier} · {settings.director_model}")
 
         asyncio.create_task(self._provision_grafana())
+        asyncio.create_task(self.director.warmup())
 
         while self._running:
             await self._replay(race_dt)

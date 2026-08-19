@@ -16,8 +16,10 @@ The tier actually used is reported on every decision and shown in the UI.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
 import re
 import time
 from dataclasses import dataclass
@@ -58,6 +60,26 @@ class Decision:
     latency_ms: int
 
 
+def _fast_config():
+    """Generation config tuned for latency.
+
+    Gemini 2.5 models reason before answering by default. Measured on Vertex,
+    that costs 3.1-7.5s per call against 0.7-0.9s with it switched off — and a
+    director that takes five seconds to choose has already missed the overtake.
+    The choice itself is a ranked pick from a scored shortlist; the thinking
+    budget buys nothing here.
+    """
+    try:
+        from google.genai import types
+        return types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
+            temperature=0.7,
+            max_output_tokens=256,
+        )
+    except Exception:  # noqa: BLE001 — older SDKs without ThinkingConfig
+        return None
+
+
 def _retry_after(exc: Exception) -> float:
     """Seconds to wait, read out of a 429 rather than guessed.
 
@@ -71,7 +93,12 @@ def _retry_after(exc: Exception) -> float:
         m = re.search(pattern, text)
         if m:
             return min(120.0, float(m.group(1)) + 1.0)
-    return 30.0
+    # Vertex answers "Resource exhausted, try again later" with no number at
+    # all — that is dynamic shared quota, regional capacity rather than a fixed
+    # per-minute ceiling, and it usually clears in seconds. Backing off half a
+    # minute for a transient blip throws away most of the race. Jitter keeps
+    # several instances from retrying in lockstep.
+    return 6.0 + random.random() * 4.0
 
 
 def _is_quota(exc: Exception) -> bool:
@@ -115,11 +142,13 @@ class DirectorAgent:
                 return {k: round(v, 1) for k, v in sorted(
                     self._airtime.items(), key=lambda kv: -kv[1])[:10]}
 
+            cfg = _fast_config()
             self._agent = LlmAgent(
                 name="world_feed_director",
                 model=self.model,
                 instruction=INSTRUCTION,
                 tools=[recent_airtime],
+                **({"generate_content_config": cfg} if cfg else {}),
             )
             self._sessions = InMemorySessionService()
             self._runner = Runner(
@@ -185,6 +214,27 @@ class DirectorAgent:
             conf = 0.7
         return cut, shot, line[:120], max(0.0, min(1.0, conf))
 
+    async def warmup(self) -> None:
+        """Absorb the cold start before anyone is watching.
+
+        The first ADK call pays for session creation and model warm-up — 27s
+        measured against a steady-state 1.2-2.5s. Left alone that lands on
+        whoever opens the page first, who sees a STANDBY feed and concludes it
+        is broken. Firing one throwaway decision at startup moves the cost to
+        where nobody is looking.
+        """
+        if self._runner is None and self._genai is None:
+            return
+        probe = Battle(ahead="AAA", behind="BBB", ahead_num="0", behind_num="00",
+                       position=1, gap=0.5, closing=0.01, drs=True, tyre_delta=0,
+                       score=0.9, why="warmup")
+        started = time.perf_counter()
+        try:
+            await self.decide([probe], 1, 1, None)
+            log.info("director warm (%.1fs)", time.perf_counter() - started)
+        except Exception as exc:  # noqa: BLE001 — warmup must never be fatal
+            log.debug("warmup failed: %s", exc)
+
     # ------------------------------------------------------------------ decide
     async def decide(self, candidates: list[Battle], lap: int, total: int,
                      on_air: str | None) -> Decision:
@@ -224,20 +274,33 @@ class DirectorAgent:
                 if not self._session_ready:
                     await self._ensure_session()
                 content = types.Content(role="user", parts=[types.Part(text=prompt)])
-                text = ""
-                async for ev in self._runner.run_async(
-                    user_id="gallery", session_id="race", new_message=content
-                ):
-                    if getattr(ev, "content", None) and ev.content.parts:
-                        for p in ev.content.parts:
-                            if getattr(p, "text", None):
-                                text += p.text
+
+                async def run_agent() -> str:
+                    out = ""
+                    async for ev in self._runner.run_async(
+                        user_id="gallery", session_id="race", new_message=content
+                    ):
+                        if getattr(ev, "content", None) and ev.content.parts:
+                            for part in ev.content.parts:
+                                if getattr(part, "text", None):
+                                    out += part.text
+                    return out
+
+                # Vertex latency is variable — measured 1.2s typical, 9.9s worst.
+                # A director is a real-time role: past the deadline the move has
+                # already happened, so a late answer is worth less than an
+                # instant deterministic one. Bound it and fall through.
+                text = await asyncio.wait_for(run_agent(), timeout=settings.director_timeout_s)
                 parsed = self._parse(text, top)
                 if parsed:
                     self.block_reason = ""
                     cut, shot, line, conf = parsed
                     return Decision(cut, shot, line, conf, "adk", elapsed())
                 log.debug("ADK returned unparseable output: %r", text[:200])
+            except asyncio.TimeoutError:
+                log.warning("director exceeded %.1fs deadline — deterministic cut",
+                            settings.director_timeout_s)
+                return heuristic("timeout")
             except Exception as exc:  # noqa: BLE001
                 if _is_quota(exc):
                     note_quota(exc)
@@ -250,6 +313,7 @@ class DirectorAgent:
                 resp = await self._genai.aio.models.generate_content(
                     model=self.model,
                     contents=f"{INSTRUCTION}\n\n{prompt}",
+                    config=_fast_config(),
                 )
                 parsed = self._parse(resp.text or "", top)
                 if parsed:

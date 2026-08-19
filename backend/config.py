@@ -49,6 +49,9 @@ class Settings:
     # generate_content requests per minute, so 13 s keeps us just under it
     # (~4.6/min). On a paid tier drop this to 3 for a much livelier feed.
     director_cooldown_s: float = _f("DIRECTOR_COOLDOWN_S", 13.0)
+    # Hard deadline on a director call. Past this the overtake has
+    # happened and a deterministic cut now beats a good cut late.
+    director_timeout_s: float = _f("DIRECTOR_TIMEOUT_S", 4.0)
 
     @property
     def gemini_ready(self) -> bool:

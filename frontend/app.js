@@ -82,11 +82,14 @@
     chip(el.chipSource, true, s.source === "fastf1" ? "fastf1 · real" : "synthetic",
          s.source === "fastf1" ? "on" : "off");
     var d = s.director;
-    chip(el.chipModel, true,
-         d.blocked ? d.blocked
-           : (d.tier === "heuristic" ? (d.configured ? "standby" : "no key") : d.tier)
-             + " · " + d.model,
-         d.blocked ? "off" : (d.tier === "heuristic" ? "off" : "ai"));
+    // Only adk/genai are genuine model decisions. "heuristic" and "timeout"
+    // are deterministic and must never be coloured as though Gemini chose.
+    var byModel = d.tier === "adk" || d.tier === "genai";
+    var label = d.blocked ? d.blocked
+      : byModel ? d.tier + " · " + d.model
+      : d.tier === "timeout" ? "deterministic · model too slow"
+      : (d.configured ? "standby" : "no credentials") + " · " + d.model;
+    chip(el.chipModel, true, label, d.blocked || !byModel ? "off" : "ai");
     chip(el.chipGrafana, s.grafana.live, s.grafana.live ? "grafana live"
          : (s.grafana.enabled ? "grafana unreachable" : "grafana offline"),
          s.grafana.live ? "on" : "off");
@@ -181,8 +184,9 @@
 
   function paintLog(s) {
     el.log.innerHTML = (s.log || []).slice(0, 12).map(function (e) {
+      var model = e.tier === "adk" || e.tier === "genai";
       var badge = e.tier
-        ? '<span class="badge ' + (e.tier === "heuristic" ? "heuristic" : "") + '">' +
+        ? '<span class="badge ' + (model ? "" : "heuristic") + '">' +
           (e.tier === "heuristic" ? "DET" : e.tier.toUpperCase()) + "</span>"
         : "";
       return '<li><span class="t">' + clock(e.t) + "</span>" + badge +

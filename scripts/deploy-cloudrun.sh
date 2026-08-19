@@ -32,7 +32,7 @@ say "project $PROJECT_ID · region $REGION · service $SERVICE"
 # ---------------------------------------------------------------- env
 [ -f .env ] || die ".env not found — copy .env.example and fill it in"
 set -a; . ./.env; set +a
-[ -n "${GOOGLE_API_KEY:-}" ] || warn "GOOGLE_API_KEY empty — the director will run deterministic"
+[ -n "${GOOGLE_API_KEY:-}${GOOGLE_CLOUD_PROJECT:-}" ] || warn "no Gemini credentials — the director will run deterministic"
 [ -n "${GRAFANA_TOKEN:-}" ]  || warn "GRAFANA_TOKEN empty — Grafana calls will only be recorded"
 
 # ---------------------------------------------------------------- apis
@@ -42,7 +42,7 @@ gcloud services enable \
   cloudbuild.googleapis.com \
   artifactregistry.googleapis.com \
   secretmanager.googleapis.com \
-  generativelanguage.googleapis.com \
+  aiplatform.googleapis.com \
   --project "$PROJECT_ID" --quiet
 
 # ---------------------------------------------------------------- secrets
@@ -61,12 +61,25 @@ put_secret() {  # name value
   fi
 }
 
-put_secret gallery-gemini-key  "${GOOGLE_API_KEY:-}"
+USE_VERTEX="${GOOGLE_GENAI_USE_VERTEXAI:-0}"
+if [ "$USE_VERTEX" = "1" ]; then
+  say "auth mode: Vertex AI (no API key — the runtime service account signs requests)"
+else
+  put_secret gallery-gemini-key "${GOOGLE_API_KEY:-}"
+fi
 put_secret gallery-grafana-token "${GRAFANA_TOKEN:-}"
 
-# Cloud Run's runtime service account needs to read them.
 PROJECT_NUM="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 RUNTIME_SA="${PROJECT_NUM}-compute@developer.gserviceaccount.com"
+if [ "$USE_VERTEX" = "1" ]; then
+  # Without this the container authenticates fine and then 403s on every
+  # generateContent call — the failure looks like a model problem, not IAM.
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${RUNTIME_SA}" \
+    --role=roles/aiplatform.user --condition=None --quiet >/dev/null
+  say "granted roles/aiplatform.user to the runtime service account"
+fi
+
 for s in gallery-gemini-key gallery-grafana-token; do
   gcloud secrets describe "$s" --project "$PROJECT_ID" >/dev/null 2>&1 || continue
   gcloud secrets add-iam-policy-binding "$s" \
@@ -78,8 +91,9 @@ say "secret access granted to $RUNTIME_SA"
 
 # ---------------------------------------------------------------- deploy
 SECRET_FLAGS=""
-gcloud secrets describe gallery-gemini-key --project "$PROJECT_ID" >/dev/null 2>&1 \
-  && SECRET_FLAGS="GOOGLE_API_KEY=gallery-gemini-key:latest"
+if [ "$USE_VERTEX" != "1" ] && gcloud secrets describe gallery-gemini-key --project "$PROJECT_ID" >/dev/null 2>&1; then
+  SECRET_FLAGS="GOOGLE_API_KEY=gallery-gemini-key:latest"
+fi
 if gcloud secrets describe gallery-grafana-token --project "$PROJECT_ID" >/dev/null 2>&1; then
   [ -n "$SECRET_FLAGS" ] && SECRET_FLAGS="${SECRET_FLAGS},"
   SECRET_FLAGS="${SECRET_FLAGS}GRAFANA_TOKEN=gallery-grafana-token:latest"
@@ -103,7 +117,7 @@ gcloud run deploy "$SERVICE" \
   --no-cpu-throttling \
   --timeout 3600 \
   --concurrency 60 \
-  --set-env-vars "DIRECTOR_MODEL=${DIRECTOR_MODEL:-gemini-flash-lite-latest},RACE_YEAR=${RACE_YEAR:-2023},RACE_EVENT=${RACE_EVENT:-Monza},RACE_SESSION=${RACE_SESSION:-R},REPLAY_SPEED=${REPLAY_SPEED:-8.0},GRAFANA_URL=${GRAFANA_URL:-},DIRECTOR_COOLDOWN_S=${DIRECTOR_COOLDOWN_S:-13}" \
+  --set-env-vars "GOOGLE_GENAI_USE_VERTEXAI=${USE_VERTEX},GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1},DIRECTOR_TIMEOUT_S=${DIRECTOR_TIMEOUT_S:-4},DIRECTOR_MODEL=${DIRECTOR_MODEL:-gemini-2.5-flash},RACE_YEAR=${RACE_YEAR:-2023},RACE_EVENT=${RACE_EVENT:-Monza},RACE_SESSION=${RACE_SESSION:-R},REPLAY_SPEED=${REPLAY_SPEED:-8.0},GRAFANA_URL=${GRAFANA_URL:-},DIRECTOR_COOLDOWN_S=${DIRECTOR_COOLDOWN_S:-13}" \
   ${SECRET_FLAGS:+--set-secrets "$SECRET_FLAGS"} \
   --quiet
 
