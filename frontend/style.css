@@ -62,8 +62,10 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .top .v { color: var(--ink); letter-spacing: .1em; }
 .top .v.accent { color: var(--orange); }
 /* Named distinctly from the right-hand rail. Both were .right, and the rail's
-   flex-direction: column leaked into the header, stacking the status chips. */
-.hd-right { margin-left: auto; display: flex; flex-direction: row; gap: 8px; align-items: center; flex-wrap: nowrap; }
+   flex-direction: column leaked into the header, stacking the status chips.
+   No margin-left:auto — flinging one chip to the far edge left a band of dead
+   space across the middle of the bar. It reads as part of the row instead. */
+.hd-right { display: flex; flex-direction: row; gap: 8px; align-items: center; flex-wrap: nowrap; }
 .chip span { white-space: nowrap; }
 
 .chip {
