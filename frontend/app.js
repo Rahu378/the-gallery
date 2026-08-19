@@ -9,7 +9,7 @@
 
   var el = {
     circuit: $("circuit"), lap: $("lap"),
-    chipSource: $("chipSource"), chipModel: $("chipModel"), chipGrafana: $("chipGrafana"),
+    chipStatus: $("chipStatus"),
     tower: $("tower"), towerCount: $("towerCount"), selNote: $("selNote"),
     mapName: $("mapName"), mapSrc: $("mapSrc"), flash: $("flash"),
     onair: $("onair"), oaNum: $("oaNum"), oaShot: $("oaShot"), oaTier: $("oaTier"),
@@ -82,27 +82,37 @@
   function paint(s) {
     el.circuit.textContent = s.circuit || "—";
     el.lap.textContent = s.lap + " / " + (s.total_laps || "—");
+
+    // The header had a wide hole between the lap counter and the status chips.
+    // Filling it with the three things worth knowing at a glance beats closing
+    // the gap and leaving the bar half empty.
+    var lead = (s.cars || [])[0], second = (s.cars || [])[1];
+    $("hdLeader").textContent = lead ? lead.code : "—";
+    $("hdGap").textContent = second ? "+" + second.gap.toFixed(3) : "—";
+    $("hdAir").textContent = s.on_air ? s.on_air.code + " · " + (s.on_air.shot || "").toLowerCase() : "standby";
     el.mapSrc.textContent = s.source === "fastf1" ? "real telemetry · fastf1" : "synthetic replay";
     el.towerCount.textContent = s.cars.length + " cars";
     el.fScored.textContent = (s.pairings_scored || 0).toLocaleString();
     el.fLatency.textContent = s.director.latency_ms ? s.director.latency_ms + " ms" : "—";
     el.fPushed.textContent = (s.grafana.pushed || 0).toLocaleString();
 
-    chip(el.chipSource, s.source === "fastf1" ? "fastf1 · real" : "synthetic",
-         s.source === "fastf1" ? "on" : "off");
-
-    // Only adk/genai are model decisions. Everything else is deterministic and
-    // must read as degraded rather than borrowing the model's colour.
+    // One chip instead of three. Source is already on the map tag, decision
+    // tier is already on the metric strip — repeating both in the header left
+    // a wide hole and said nothing new. This stays quiet when everything is
+    // healthy and names the specific fault when it is not, which is the only
+    // time the header needs to interrupt.
     var d = s.director, model = isModelTier(d.tier);
-    var label = d.blocked ? "quota · backing off"
-      : model ? d.tier + " · " + d.model
-      : d.tier === "timeout" ? "fallback · too slow"
-      : (d.configured ? "standby" : "no credentials");
-    chip(el.chipModel, label, d.blocked ? "warn" : model ? "ai" : "warn");
+    var faults = [];
+    if (d.blocked) faults.push("quota backoff");
+    else if (!model && d.tier === "timeout") faults.push("model too slow");
+    else if (!model && !d.configured) faults.push("no model credentials");
+    else if (!model) faults.push("deterministic");
+    if (s.source !== "fastf1") faults.push("synthetic race");
+    if (!s.grafana.live) faults.push(s.grafana.enabled ? "grafana unreachable" : "grafana off");
 
-    chip(el.chipGrafana,
-         s.grafana.live ? "grafana live" : (s.grafana.enabled ? "grafana unreachable" : "grafana off"),
-         s.grafana.live ? "on" : "warn");
+    chip(el.chipStatus,
+         faults.length ? faults.join(" · ") : "all systems nominal",
+         faults.length ? "warn" : "on");
 
     paintTower(s); paintOnAir(s); paintBattles(s); paintMetrics(s); paintViews(s); paintFocus(s); paintTransport(s); refreshCircuit(s);
     if (view3d && mapMode === "3d") view3d.setState(s, selected);
@@ -526,6 +536,8 @@
       body: "<p>Open library for Formula 1 timing and telemetry. Supplies position samples, lap and sector times, tyre compound and age, and the circuit geometry used for the corner markers.</p><p>DRS zones are not published anywhere, so they are recovered from the DRS channel in car telemetry and mapped back onto the track.</p>" },
     quota: { eyebrow: "Capacity", title: "Model quota",
       body: "<p>Vertex serves Gemini from dynamic shared quota — regional capacity rather than a fixed per-minute ceiling. A 429 arrives with no number and no retry delay attached.</p><p>When one lands, the director backs off 6-10 seconds with jitter and every decision in that window is taken deterministically and labelled as such. A fixed thirty-second backoff, which is the obvious default, throws away most of a race for a transient blip.</p>" },
+    status: { eyebrow: "Health", title: "Systems",
+      body: "<p>Green when the race is running on real telemetry, the director is answering through Gemini, and Grafana is reachable. Amber names whatever is not.</p><p>The faults it reports are: the model backing off a quota limit, exceeding its four-second deadline, or having no credentials at all; the race falling back to the synthetic source; and Grafana being unreachable.</p><p>It is deliberately silent otherwise. Source is already shown on the map, and which tier produced the last decision is already on the metric strip — repeating either here said nothing new.</p>" },
     grafana: { eyebrow: "Observability", title: "Grafana",
       body: "<p>The app provisions its own dashboard over the Grafana HTTP API on startup, installs a battle-imminent alert rule, and writes every cut onto the race timeline as an annotation.</p><p>Metrics go up by Prometheus <code>remote_write</code> straight from this process — a hosted Grafana has no route to scrape it, and pushing removes the need for anything to sit in between.</p>" }
   };
@@ -546,6 +558,11 @@
           + "<dt>in range now</dt><dd>" + (latest.battles || []).length + "</dd></dl>";
       } else if (key === "grafana") {
         extra = '<dl class="kv"><dt>reachable</dt><dd>' + (latest.grafana.live ? "yes" : "no") + "</dd>"
+          + "<dt>series pushed</dt><dd>" + (latest.grafana.pushed || 0).toLocaleString() + "</dd></dl>";
+      } else if (key === "status") {
+        extra = '<dl class="kv"><dt>race source</dt><dd>' + esc(latest.source) + "</dd>"
+          + "<dt>decision tier</dt><dd>" + esc(latest.director.tier) + "</dd>"
+          + "<dt>grafana</dt><dd>" + (latest.grafana.live ? "reachable" : "unreachable") + "</dd>"
           + "<dt>series pushed</dt><dd>" + (latest.grafana.pushed || 0).toLocaleString() + "</dd></dl>";
       } else if (key === "source" || key === "fastf1") {
         extra = '<dl class="kv"><dt>source</dt><dd>' + esc(latest.source) + "</dd>"

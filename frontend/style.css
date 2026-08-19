@@ -60,6 +60,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .top .sep { color: var(--line); }
 .top .k { color: var(--ink-3); }
 .top .v { color: var(--ink); letter-spacing: .1em; }
+.top .v.accent { color: var(--orange); }
 /* Named distinctly from the right-hand rail. Both were .right, and the rail's
    flex-direction: column leaked into the header, stacking the status chips. */
 .hd-right { margin-left: auto; display: flex; flex-direction: row; gap: 8px; align-items: center; flex-wrap: nowrap; }
@@ -266,7 +267,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 
 /* ───────────────── footer ───────────────── */
 .foot {
-  display: flex; align-items: center; gap: 14px; padding: 9px 18px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 16px; padding: 9px 18px; flex-wrap: wrap;
   background: var(--panel); border-top: 1px solid var(--line);
   font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
   text-transform: uppercase; color: var(--ink-3);
@@ -275,7 +276,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .foot a { color: var(--cyan); text-decoration: none; }
 .foot a:hover { text-decoration: underline; }
 .ft-right { margin-left: auto; display: flex; flex-direction: row; gap: 16px; align-items: center; }
-.pipe { display: flex; align-items: center; gap: 6px; }
+.pipe { display: flex; align-items: center; gap: 6px; margin-left: 4px; }
 .pipe .node { color: var(--ink-2); padding: 2px 5px; border-radius: 2px; letter-spacing: .14em; text-transform: uppercase; font-size: 9.5px; }
 .pipe .node:hover { background: var(--panel-3); color: var(--ink); }
 .pipe .node.llm { color: var(--cyan); }

@@ -51,6 +51,58 @@ function glowTexture() {
 }
 let GLOW = null;
 
+/* A stylised open-wheel car, built from primitives.
+ *
+ * Modelled rather than downloaded: any real F1 car model carries a licence,
+ * and the cars need to read at a glance from a chase camera anyway, which
+ * favours a clean silhouette over detail. Nose, sidepods, airbox, front and
+ * rear wing, four exposed wheels — enough that it is unmistakably a formula
+ * car at the size it is actually drawn.
+ */
+function buildCar(color) {
+  const g = new THREE.Group();
+  const body = new THREE.MeshLambertMaterial({ color: new THREE.Color(color) });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x11141c });
+  const wing = new THREE.MeshLambertMaterial({ color: new THREE.Color(color).multiplyScalar(0.65) });
+
+  // survival cell, tapering to the nose
+  const tub = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.26, 1.85), body);
+  tub.position.y = 0.24; g.add(tub);
+
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.95, 8), body);
+  nose.rotation.x = -Math.PI / 2; nose.position.set(0, 0.22, 1.35); g.add(nose);
+
+  // airbox above the driver
+  const airbox = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), body);
+  airbox.position.set(0, 0.48, -0.35); g.add(airbox);
+
+  // sidepods
+  [-0.42, 0.42].forEach(x => {
+    const pod = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.26, 1.0), body);
+    pod.position.set(x, 0.24, -0.1); g.add(pod);
+  });
+
+  // wings
+  const fw = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.06, 0.34), wing);
+  fw.position.set(0, 0.12, 1.82); g.add(fw);
+  const rw = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.34, 0.08), wing);
+  rw.position.set(0, 0.6, -1.15); g.add(rw);
+  const rwEnd = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.05, 0.3), wing);
+  rwEnd.position.set(0, 0.76, -1.15); g.add(rwEnd);
+
+  // exposed wheels — the thing that makes it read as a formula car
+  const tyre = new THREE.CylinderGeometry(0.3, 0.3, 0.26, 14);
+  [[-0.72, 1.15], [0.72, 1.15], [-0.78, -0.95], [0.78, -0.95]].forEach(([x, z]) => {
+    const w = new THREE.Mesh(tyre, dark);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(x, 0.3, z);
+    g.add(w);
+  });
+
+  g.scale.setScalar(1.0);
+  return g;
+}
+
 function toWorld(p) {
   const cx = (bounds[0] + bounds[2]) / 2, cy = (bounds[1] + bounds[3]) / 2;
   return new THREE.Vector3((p[0] - cx) * SPAN, (p[2] || 0) * SPAN * VERT, (p[1] - cy) * SPAN);
@@ -67,7 +119,7 @@ function buildTrack() {
 
   // A flat ribbon rather than a tube: it reads as a road surface from above
   // and does not hide cars behind its own geometry at low camera angles.
-  const N = 900, HALF = 2.1;
+  const N = 900, HALF = 2.6;
   const pos = [], idx = [], col = [];
   const up = new THREE.Vector3(0, 1, 0);
   for (let i = 0; i < N; i++) {
@@ -124,6 +176,13 @@ export function init(container) {
   container.appendChild(renderer.domElement);
   renderer.domElement.className = "gl";
 
+  // Lambert bodies need light. Key from above, cool fill from below so the
+  // underside of a car does not go solid black against the track.
+  scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x0f1117, 2.1));
+  const key = new THREE.DirectionalLight(0xffffff, 1.5);
+  key.position.set(40, 90, 30);
+  scene.add(key);
+
   carGroup = new THREE.Group(); glowGroup = new THREE.Group(); lineGroup = new THREE.Group();
   scene.add(carGroup, glowGroup, lineGroup);
 
@@ -158,40 +217,50 @@ export function setState(s, sel) {
     seen.add(c.num);
     let e = cars.get(c.num);
     if (!e) {
-      const dot = new THREE.Mesh(
-        new THREE.SphereGeometry(0.85, 12, 12),
-        new THREE.MeshBasicMaterial({ color: new THREE.Color(c.color) })
-      );
+      const dot = buildCar(c.color);
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({
         map: GLOW, color: new THREE.Color(c.color),
         blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
       }));
       halo.scale.set(2.6, 2.6, 1);
       carGroup.add(dot); glowGroup.add(halo);
-      e = { dot, halo };
+      e = { dot, halo, prev: null, heading: 0 };
       cars.set(c.num, e);
     }
     const w = toWorld([c.x, c.y, c.z || 0]);
-    w.y += 0.6;
+    w.y += 0.35;
+    // Point the car where it is going. Heading comes from the step it just
+    // took; a car sitting still keeps its last heading rather than snapping
+    // to zero and facing off into the scenery.
+    if (e.prev) {
+      const dx = w.x - e.prev.x, dz = w.z - e.prev.z;
+      if (dx * dx + dz * dz > 1e-6) e.heading = Math.atan2(dx, dz);
+    }
+    e.prev = w.clone();
     e.dot.position.copy(w);
-    e.halo.position.copy(w);
+    e.dot.rotation.y = e.heading || 0;
+    e.halo.position.copy(w).add(new THREE.Vector3(0, -0.15, 0));
     const isAir = c.num === onAir, isSel = c.num === selected;
     const dim = selected && !isSel;
-    e.dot.scale.setScalar(isAir || isSel ? 1.5 : 1);
+    e.dot.scale.setScalar(isAir || isSel ? 1.45 : 1.1);
     // Halos are sized in world units, so at chase distance a large one fills
     // the frame. Scale with camera distance to keep the bloom proportionate.
     const d = camera.position.distanceTo(w);
     const k = Math.max(0.35, Math.min(1.6, d / 70));
-    e.halo.scale.setScalar((isAir ? 6.5 : isSel ? 5.5 : dim ? 1.6 : 3) * k);
+    e.halo.scale.setScalar((isAir ? 5.5 : isSel ? 4.5 : dim ? 1.4 : 2.4) * k);
     e.halo.material.color.set(isAir ? COL.onair : isSel ? COL.sel : c.color);
-    e.halo.material.opacity = dim ? 0.22 : isAir ? 0.95 : 0.75;
-    e.dot.material.opacity = dim ? 0.3 : 1;
-    e.dot.material.transparent = true;
+    // Kept behind and below the car so the silhouette stays readable — a halo
+    // centred on the body just erases the thing it is meant to highlight.
+    e.halo.material.opacity = dim ? 0.18 : isAir ? 0.72 : 0.42;
+    e.dot.traverse(o => {
+      if (o.material) { o.material.transparent = true; o.material.opacity = dim ? 0.35 : 1; }
+    });
   });
   cars.forEach((e, num) => {
     if (!seen.has(num)) {
       carGroup.remove(e.dot); glowGroup.remove(e.halo);
-      e.dot.geometry.dispose(); cars.delete(num);
+      e.dot.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+      cars.delete(num);
     }
   });
 
@@ -229,7 +298,7 @@ function loop() {
     // seen from the side rather than flattened by a top-down view.
     const p = cars.get(selected).dot.position;
     target.copy(p);
-    const want = new THREE.Vector3(p.x + 13, p.y + 7.5, p.z + 13);
+    const want = new THREE.Vector3(p.x + 9, p.y + 5, p.z + 9);
     camera.position.lerp(want, Math.min(1, dt * 2.2));
   } else {
     orbit += dt * 0.05;
