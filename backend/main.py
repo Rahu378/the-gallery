@@ -76,8 +76,9 @@ async def state() -> dict:
 async def circuit() -> dict:
     if not orch:
         return {"outline": []}
-    return {"outline": orch.outline, "name": orch.source.meta.name,
-            "source": orch.source.meta.source}
+    meta = orch.source.meta
+    return {"outline": orch.outline, "name": meta.name, "source": meta.source,
+            "corners": meta.corners, "drs_zones": meta.drs_zones}
 
 
 @app.get("/api/grafana")
@@ -110,8 +111,12 @@ async def ws(sock: WebSocket) -> None:
     if not orch:
         await sock.close()
         return
-    await sock.send_json({"type": "circuit", "outline": orch.outline,
-                          "name": orch.source.meta.name})
+    await sock.send_json({
+        "type": "circuit", "outline": orch.outline,
+        "name": orch.source.meta.name,
+        "corners": orch.source.meta.corners,
+        "drs_zones": orch.source.meta.drs_zones,
+    })
     q = orch.subscribe()
     try:
         while True:

@@ -22,6 +22,7 @@ from ..config import settings
 from ..data.source import Frame, build_source
 from ..grafana.client import grafana
 from ..grafana.metrics import metrics
+from ..grafana.remote_write import RemoteWriter
 from .cutguard import CutGuard
 from .director import DirectorAgent, Decision
 from .tension import Battle, TensionScorer
@@ -71,7 +72,13 @@ class Orchestrator:
         self._log: list[LogEntry] = []
         self._pending: asyncio.Task | None = None
         self._last_call = 0.0
+        self._cut_count = 0
         self._subs: set[asyncio.Queue] = set()
+        self.writer = RemoteWriter(
+            settings.prom_push_url, settings.prom_user, settings.prom_token,
+            extra_labels={"job": "the-gallery", "circuit": self.source.meta.name},
+        )
+        self._push_batch: list[tuple[str, dict, float]] = []
         self._running = False
 
     # ------------------------------------------------------------------ log
@@ -109,6 +116,18 @@ class Orchestrator:
             metrics.gauge("gallery_battle_gap_seconds", b.gap, **labels)
         metrics.gauge("gallery_race_lap", frame.lap)
         metrics.gauge("gallery_on_air_score", self.guard.current_score)
+
+        batch: list[tuple[str, dict, float]] = [
+            ("gallery_race_lap", {}, float(frame.lap)),
+            ("gallery_on_air_score", {}, float(self.guard.current_score)),
+            ("gallery_director_latency_ms", {}, float(self.state.director_latency)),
+            ("gallery_cuts_total", {"tier": self.state.director_tier}, float(self._cut_count)),
+        ]
+        for b in battles[:8]:
+            lb = {"position": str(b.position), "ahead": b.ahead, "behind": b.behind}
+            batch.append(("gallery_battle_tension", lb, b.score))
+            batch.append(("gallery_battle_gap_seconds", lb, b.gap))
+        self._push_batch = batch
         metrics.inc("gallery_pairings_scored_total", max(0, len(frame.cars) - 1))
         self.state.pairings_scored += max(0, len(frame.cars) - 1)
 
@@ -124,6 +143,7 @@ class Orchestrator:
 
         asyncio.create_task(self._provision_grafana())
         asyncio.create_task(self.director.warmup())
+        asyncio.create_task(self._push_loop())
 
         while self._running:
             await self._replay(race_dt)
@@ -232,6 +252,7 @@ class Orchestrator:
         self.state.director_tier = decision.tier
         self.state.director_latency = decision.latency_ms
         metrics.inc("gallery_cuts_total", tier=decision.tier)
+        self._cut_count += 1
         metrics.gauge("gallery_director_latency_ms", decision.latency_ms)
 
         self.state.on_air = {
@@ -255,6 +276,23 @@ class Orchestrator:
             code=chosen.ahead, line=decision.line, tier=decision.tier,
             score=chosen.score,
         )
+
+    async def _push_loop(self) -> None:
+        """Ship the current metric snapshot to Grafana Cloud every 15 s.
+
+        Scrape-shaped rather than event-shaped on purpose: sending the latest
+        value of everything on a fixed interval keeps the series continuous,
+        where pushing only on change leaves gaps the graphs render as breaks.
+        """
+        if not self.writer.enabled:
+            self._emit("system", "metrics: no remote_write credentials — local /metrics only")
+            return
+        self._emit("system", "metrics: pushing to grafana cloud every 15s")
+        while self._running:
+            await asyncio.sleep(15)
+            batch = list(self._push_batch)
+            if batch:
+                await self.writer.push(batch)
 
     # ---------------------------------------------------------------- grafana
     async def _provision_grafana(self) -> None:
@@ -282,7 +320,9 @@ class Orchestrator:
                          "blocked": self.director.block_reason,
                          "configured": settings.gemini_ready},
             "grafana": {"live": s.grafana_live, "url": grafana.dashboard_url,
-                        "enabled": grafana.enabled},
+                        "enabled": grafana.enabled,
+                        "pushed": self.writer.sent,
+                        "push_error": self.writer.last_error},
             "pairings_scored": s.pairings_scored,
             "hold": round(max(0.0, s.race_t - self.guard.since), 1) if self.guard.current else 0.0,
             "log": [{"t": round(e.t, 1), "kind": e.kind, "text": e.text, "tier": e.tier}

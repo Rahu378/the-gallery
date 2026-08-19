@@ -33,6 +33,11 @@ class Settings:
     # Grafana
     grafana_url: str = os.getenv("GRAFANA_URL", "http://localhost:3000").rstrip("/")
     grafana_token: str = os.getenv("GRAFANA_TOKEN", "")
+    # Prometheus remote_write, so the app can push its own metrics to Grafana
+    # Cloud instead of relying on something nearby to scrape it.
+    prom_push_url: str = os.getenv("GRAFANA_PROM_URL", "")
+    prom_user: str = os.getenv("GRAFANA_PROM_USER", "")
+    prom_token: str = os.getenv("GRAFANA_PROM_TOKEN", "")
 
     # Replay
     race_year: int = int(os.getenv("RACE_YEAR", "2023"))
@@ -60,6 +65,10 @@ class Settings:
     @property
     def grafana_ready(self) -> bool:
         return bool(self.grafana_token)
+
+    @property
+    def prom_push_ready(self) -> bool:
+        return bool(self.prom_push_url and self.prom_user and self.prom_token)
 
 
 settings = Settings()

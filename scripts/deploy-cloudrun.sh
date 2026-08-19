@@ -75,6 +75,7 @@ else
   put_secret gallery-gemini-key "${GOOGLE_API_KEY:-}"
 fi
 put_secret gallery-grafana-token "${GRAFANA_TOKEN:-}"
+put_secret gallery-prom-token "${GRAFANA_PROM_TOKEN:-}"
 
 PROJECT_NUM="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 RUNTIME_SA="${PROJECT_NUM}-compute@developer.gserviceaccount.com"
@@ -99,7 +100,7 @@ for R in roles/cloudbuild.builds.builder roles/storage.objectViewer \
 done
 say "build roles granted"
 
-for s in gallery-gemini-key gallery-grafana-token; do
+for s in gallery-gemini-key gallery-grafana-token gallery-prom-token; do
   gcloud secrets describe "$s" --project "$PROJECT_ID" >/dev/null 2>&1 || continue
   gcloud secrets add-iam-policy-binding "$s" \
     --member="serviceAccount:${RUNTIME_SA}" \
@@ -116,6 +117,10 @@ fi
 if gcloud secrets describe gallery-grafana-token --project "$PROJECT_ID" >/dev/null 2>&1; then
   [ -n "$SECRET_FLAGS" ] && SECRET_FLAGS="${SECRET_FLAGS},"
   SECRET_FLAGS="${SECRET_FLAGS}GRAFANA_TOKEN=gallery-grafana-token:latest"
+fi
+if gcloud secrets describe gallery-prom-token --project "$PROJECT_ID" >/dev/null 2>&1; then
+  [ -n "$SECRET_FLAGS" ] && SECRET_FLAGS="${SECRET_FLAGS},"
+  SECRET_FLAGS="${SECRET_FLAGS}GRAFANA_PROM_TOKEN=gallery-prom-token:latest"
 fi
 
 say "building and deploying — first run takes ~5 min"
@@ -136,7 +141,7 @@ gcloud run deploy "$SERVICE" \
   --no-cpu-throttling \
   --timeout 3600 \
   --concurrency 60 \
-  --set-env-vars "GOOGLE_GENAI_USE_VERTEXAI=${USE_VERTEX},GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1},DIRECTOR_TIMEOUT_S=${DIRECTOR_TIMEOUT_S:-4},DIRECTOR_MODEL=${DIRECTOR_MODEL:-gemini-2.5-flash},RACE_YEAR=${RACE_YEAR:-2023},RACE_EVENT=${RACE_EVENT:-Monza},RACE_SESSION=${RACE_SESSION:-R},REPLAY_SPEED=${REPLAY_SPEED:-8.0},GRAFANA_URL=${GRAFANA_URL:-},DIRECTOR_COOLDOWN_S=${DIRECTOR_COOLDOWN_S:-13}" \
+  --set-env-vars "GOOGLE_GENAI_USE_VERTEXAI=${USE_VERTEX},GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1},DIRECTOR_TIMEOUT_S=${DIRECTOR_TIMEOUT_S:-4},DIRECTOR_MODEL=${DIRECTOR_MODEL:-gemini-2.5-flash},RACE_YEAR=${RACE_YEAR:-2023},RACE_EVENT=${RACE_EVENT:-Monza},RACE_SESSION=${RACE_SESSION:-R},REPLAY_SPEED=${REPLAY_SPEED:-8.0},GRAFANA_URL=${GRAFANA_URL:-},GRAFANA_PROM_URL=${GRAFANA_PROM_URL:-},GRAFANA_PROM_USER=${GRAFANA_PROM_USER:-},DIRECTOR_COOLDOWN_S=${DIRECTOR_COOLDOWN_S:-13}" \
   ${SECRET_FLAGS:+--set-secrets "$SECRET_FLAGS"} \
   --quiet
 

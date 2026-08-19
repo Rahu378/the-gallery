@@ -57,6 +57,8 @@ class RaceMeta:
     outline: list = field(default_factory=list)
     total_laps: int = 0
     source: str = "synthetic"
+    corners: list = field(default_factory=list)   # [{n, x, y}] normalised
+    drs_zones: list = field(default_factory=list) # [[start_frac, end_frac]]
 
 
 class SyntheticSource:
@@ -210,6 +212,7 @@ class FastF1Source:
             self.tyres[d] = seq
 
         total_laps = int(laps["LapNumber"].max()) if len(laps) else 0
+        corners, drs = self._track_features(ses)
         self.meta = RaceMeta(
             name=str(ses.event["EventName"]),
             year=year,
@@ -217,6 +220,8 @@ class FastF1Source:
             outline=self.cl.outline(),
             total_laps=total_laps,
             source="fastf1",
+            corners=corners,
+            drs_zones=drs,
         )
         self.i = 0
         log.info("loaded %s — %d drivers, %d frames", self.meta.name, len(self.cars), len(self.grid))
@@ -247,6 +252,69 @@ class FastF1Source:
             except Exception:  # noqa: BLE001
                 continue
         raise RuntimeError("could not build a circuit centerline")
+
+    def _track_features(self, ses) -> tuple[list, list]:
+        """Corner markers and DRS zones, both derived from session data.
+
+        Corners come straight from the circuit info. DRS zones are not
+        published anywhere, so they are recovered from car telemetry: the DRS
+        channel reads 10, 12 or 14 while the flap is open, and mapping those
+        samples onto the centerline shows where on the lap that happens.
+        """
+        corners: list = []
+        try:
+            ci = ses.get_circuit_info()
+            s = self.cl.project(ci.corners["X"].to_numpy(), ci.corners["Y"].to_numpy())
+            for arc, num in zip(s, ci.corners["Number"].to_numpy()):
+                x, y = self.cl.point_at(float(arc))
+                corners.append({"n": int(num), "x": round(x, 5), "y": round(y, 5)})
+        except Exception as exc:  # noqa: BLE001
+            log.debug("corner markers unavailable: %s", exc)
+
+        drs: list = []
+        try:
+            import numpy as _np
+            open_frac: list[float] = []
+            picked = 0
+            for _, lap in ses.laps.iterrows():
+                if picked >= 6:
+                    break
+                try:
+                    car = lap.get_car_data()
+                    pos = lap.get_pos_data()
+                except Exception:  # noqa: BLE001
+                    continue
+                if "DRS" not in car or len(pos) < 50:
+                    continue
+                picked += 1
+                on = car[car["DRS"].isin([10, 12, 14])]
+                if not len(on):
+                    continue
+                # align by session time, then project onto the centerline
+                pt = pos["SessionTime"].dt.total_seconds().to_numpy()
+                ot = on["SessionTime"].dt.total_seconds().to_numpy()
+                gx = _np.interp(ot, pt, pos["X"].to_numpy())
+                gy = _np.interp(ot, pt, pos["Y"].to_numpy())
+                arcs = self.cl.project(gx, gy) / self.cl.length
+                open_frac.extend(float(a) for a in arcs)
+
+            if open_frac:
+                # cluster the fractions into contiguous zones
+                open_frac.sort()
+                start = prev = open_frac[0]
+                for f in open_frac[1:]:
+                    if f - prev > 0.03:          # gap => new zone
+                        if prev - start > 0.01:
+                            drs.append([round(start, 4), round(prev, 4)])
+                        start = f
+                    prev = f
+                if prev - start > 0.01:
+                    drs.append([round(start, 4), round(prev, 4)])
+        except Exception as exc:  # noqa: BLE001
+            log.debug("DRS zones unavailable: %s", exc)
+
+        log.info("track features: %d corners, %d DRS zones", len(corners), len(drs))
+        return corners, drs
 
     def _tyre_at(self, d: str, t: float) -> tuple[str, int]:
         seq = self.tyres.get(d, [])

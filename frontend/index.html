@@ -15,32 +15,51 @@
     <span class="sep">│</span>
     <span><span class="k">circuit</span> <span class="v" id="circuit">—</span></span>
     <span><span class="k">lap</span> <span class="v" id="lap">—</span></span>
-    <div class="right">
-      <span class="chip" id="chipSource"><i></i><span>source</span></span>
-      <span class="chip ai" id="chipModel"><i></i><span>director</span></span>
-      <span class="chip" id="chipGrafana"><i></i><span>grafana</span></span>
+    <div class="hd-right">
+      <button class="chip" id="chipSource" type="button" data-explain="source"><i></i><span>source</span></button>
+      <button class="chip" id="chipModel"  type="button" data-explain="director"><i></i><span>director</span></button>
+      <button class="chip" id="chipGrafana" type="button" data-explain="grafana"><i></i><span>grafana</span></button>
     </div>
   </header>
 
   <div class="grid">
 
-    <!-- ── timing tower ───────────────────────────────── -->
+    <!-- ── timing tower ───────────────────────────── -->
     <section class="col">
       <div class="col-h">
         <span>Timing</span>
         <span class="count" id="towerCount">—</span>
       </div>
-      <div class="tower" id="tower"></div>
+      <div class="tower" id="tower" role="listbox" aria-label="Timing tower"></div>
+      <div class="col-f" id="selNote">click a driver to track them</div>
     </section>
 
-    <!-- ── track map ──────────────────────────────────── -->
-    <section class="col">
-      <div class="col-h">
-        <span class="agent">◆ tension</span>
-        <span class="agent">◆ director</span>
-        <span class="agent">◆ cut-guard</span>
-        <span class="count" id="scored">—</span>
+    <!-- ── centre: on air + map ───────────────────── -->
+    <section class="col centre">
+
+      <div class="onair-wrap">
+        <div class="onair" id="onair">
+          <div class="onair-hd">
+            <span class="rec"><i></i>ON AIR</span>
+            <span class="onair-shot" id="oaShot">STANDBY</span>
+            <span class="onair-tier" id="oaTier">—</span>
+          </div>
+          <div class="onair-body">
+            <span class="onair-num" id="oaNum">—</span>
+            <div class="onair-txt">
+              <div class="onair-vs" id="oaAgainst">waiting for a story</div>
+              <p class="onair-line" id="oaLine">The director has not committed a shot yet.</p>
+            </div>
+          </div>
+          <div class="onair-ft">
+            <span><b id="oaHold">0.0s</b> hold</span>
+            <span><b id="oaConf">—</b> confidence</span>
+            <span><b id="oaGap">—</b> gap</span>
+            <span><b id="oaScore">—</b> score</span>
+          </div>
+        </div>
       </div>
+
       <div class="stage">
         <canvas id="map"></canvas>
         <div class="stage-tag">
@@ -49,65 +68,59 @@
           <span class="src" id="mapSrc">—</span>
         </div>
         <div class="legend">
-          <span><i style="background:#5E5E74"></i>in range</span>
-          <span><i style="background:#A24BFF;box-shadow:0 0 6px #A24BFF"></i>cut candidate</span>
-          <span><i style="background:#00E676"></i>DRS</span>
+          <span><i class="sw" style="background:#5E5E74"></i>in range</span>
+          <span><i class="sw" style="background:#A24BFF;box-shadow:0 0 6px #A24BFF"></i>on air</span>
+          <span><i class="sw" style="background:#00E676"></i>DRS</span>
+          <span><i class="sw drs"></i>DRS zone</span>
         </div>
         <div class="flash" id="flash"></div>
       </div>
     </section>
 
-    <!-- ── right rail ─────────────────────────────────── -->
+    <!-- ── right rail ─────────────────────────────── -->
     <section class="col right">
       <div class="block">
         <div class="block-lab">
-          <span>World feed</span>
-          <span class="rec"><i></i>on air</span>
+          <span>Contested positions</span>
+          <span class="hint">click to track</span>
         </div>
-        <div class="onair" id="onair">
-          <div class="onair-top">
-            <span class="onair-num" id="oaNum" style="background:#5E5E74">—</span>
-            <span class="onair-meta">
-              <b id="oaShot">STANDBY</b>
-              <span id="oaAgainst">waiting for a story</span>
-            </span>
-          </div>
-          <div class="onair-line" id="oaLine">The director has not committed a shot yet.</div>
-          <div class="onair-foot">
-            <span>hold <span id="oaHold">0.0s</span></span>
-            <span>conf <span id="oaConf">—</span></span>
-            <span class="tier" id="oaTier">—</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="block">
-        <div class="block-lab"><span>Contested positions</span></div>
         <div id="battles"></div>
       </div>
 
-      <div class="block" style="border-bottom:0">
-        <div class="block-lab"><span>Agent decisions</span></div>
+      <div class="block grow">
+        <div class="block-lab">
+          <span>Agent decisions</span>
+          <span class="hint" id="logHint">live</span>
+        </div>
         <ul class="log" id="log"></ul>
       </div>
     </section>
   </div>
 
   <footer class="foot">
-    <span class="pipe">
-      <span class="node">FastF1</span><span class="arrow">→</span>
-      <span class="node">tension</span><span class="arrow">→</span>
-      <span class="node llm">Gemini · ADK</span><span class="arrow">→</span>
-      <span class="node">cut-guard</span><span class="arrow">→</span>
-      <span class="node">feed</span>
+    <span class="pipe" id="pipe">
+      <button class="node" type="button" data-explain="fastf1">FastF1</button><span class="arrow">→</span>
+      <button class="node" type="button" data-explain="tension">tension</button><span class="arrow">→</span>
+      <button class="node llm" type="button" data-explain="director">Gemini · ADK</button><span class="arrow">→</span>
+      <button class="node" type="button" data-explain="cutguard">cut-guard</button><span class="arrow">→</span>
+      <button class="node" type="button" data-explain="feed">feed</button>
     </span>
-    <div class="right">
+    <div class="ft-right">
       <span>latency <span class="v" id="fLatency">—</span></span>
       <span>pairings <span class="v" id="fScored">—</span></span>
-      <span><a href="/api/grafana" target="_blank" rel="noopener">grafana calls</a></span>
-      <span><a href="/metrics" target="_blank" rel="noopener">/metrics</a></span>
+      <span>pushed <span class="v" id="fPushed">—</span></span>
+      <a href="/metrics" target="_blank" rel="noopener">/metrics</a>
     </div>
   </footer>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-in">
+    <button class="sheet-x" id="sheetX" type="button" aria-label="Close">×</button>
+    <div class="sheet-eyebrow" id="sheetEyebrow"></div>
+    <h2 id="sheetTitle"></h2>
+    <div id="sheetBody"></div>
+  </div>
 </div>
 
 <script src="/static/app.js"></script>
