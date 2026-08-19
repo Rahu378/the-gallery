@@ -1,11 +1,18 @@
 {
   "uid": "the-gallery",
-  "title": "The Gallery — world feed direction",
-  "tags": ["f1", "agentic-cinema", "the-gallery"],
+  "title": "The Gallery \u2014 world feed direction",
+  "tags": [
+    "f1",
+    "agentic-cinema",
+    "the-gallery"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "5s",
-  "time": { "from": "now-15m", "to": "now" },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
   "annotations": {
     "list": [
       {
@@ -13,22 +20,55 @@
         "enable": true,
         "iconColor": "purple",
         "type": "tags",
-        "tags": ["gallery", "cut"]
+        "tags": [
+          "gallery",
+          "cut"
+        ]
       }
     ]
   },
   "panels": [
     {
+      "id": 10,
+      "type": "annolist",
+      "title": "Director cuts",
+      "description": "Every decision the director committed, newest first. Written by the agent as a Grafana annotation at the moment of the cut.",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "onlyFromThisDashboard": false,
+        "onlyInTimeRange": false,
+        "tags": [
+          "gallery",
+          "cut"
+        ],
+        "limit": 20,
+        "showTags": true,
+        "showTime": true,
+        "showUser": false,
+        "navigateToPanel": false
+      }
+    },
+    {
       "id": 1,
       "type": "timeseries",
       "title": "Battle tension by contested position",
       "description": "Every adjacent pairing scored at 10 Hz. The dashed line is the cut threshold.",
-      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 9
+      },
       "targets": [
         {
           "refId": "A",
           "expr": "gallery_battle_tension",
-          "legendFormat": "P{{position}} — {{ahead}} v {{behind}}"
+          "legendFormat": "P{{position}} \u2014 {{ahead}} v {{behind}}"
         }
       ],
       "fieldConfig": {
@@ -36,12 +76,22 @@
           "min": 0,
           "max": 1,
           "unit": "short",
-          "custom": { "fillOpacity": 8, "lineWidth": 2, "showPoints": "never" },
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "text", "value": null },
-              { "color": "purple", "value": 0.55 }
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "purple",
+                "value": 0.55
+              }
             ]
           }
         },
@@ -53,16 +103,34 @@
       "type": "stat",
       "title": "On air",
       "description": "Battle score of the shot currently going out on the world feed.",
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 0 },
-      "targets": [{ "refId": "A", "expr": "gallery_on_air_score" }],
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "gallery_on_air_score"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
-          "min": 0, "max": 1, "decimals": 2,
+          "min": 0,
+          "max": 1,
+          "decimals": 2,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "yellow", "value": null },
-              { "color": "green", "value": 0.55 }
+              {
+                "color": "yellow",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.55
+              }
             ]
           }
         }
@@ -72,17 +140,36 @@
       "id": 3,
       "type": "stat",
       "title": "Director latency",
-      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 4 },
-      "targets": [{ "refId": "A", "expr": "gallery_director_latency_ms" }],
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "gallery_director_latency_ms"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1200 },
-              { "color": "red", "value": 3000 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1200
+              },
+              {
+                "color": "red",
+                "value": 3000
+              }
             ]
           }
         }
@@ -93,18 +180,27 @@
       "type": "timeseries",
       "title": "Gap between contesting cars",
       "description": "Seconds. Below 1.0 the following car has DRS.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
       "targets": [
         {
           "refId": "A",
           "expr": "gallery_battle_gap_seconds",
-          "legendFormat": "P{{position}} — {{ahead}} v {{behind}}"
+          "legendFormat": "P{{position}} \u2014 {{ahead}} v {{behind}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "custom": { "fillOpacity": 0, "lineWidth": 2, "showPoints": "never" }
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
         }
       }
     },
@@ -113,7 +209,12 @@
       "type": "timeseries",
       "title": "Cuts committed by decision tier",
       "description": "adk = Gemini via the Agent Development Kit. heuristic = deterministic fallback.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
       "targets": [
         {
           "refId": "A",
@@ -123,7 +224,11 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "custom": { "drawStyle": "bars", "fillOpacity": 60, "lineWidth": 1 }
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 1
+          }
         }
       }
     }
