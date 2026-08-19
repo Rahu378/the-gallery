@@ -129,6 +129,13 @@ class SyntheticSource:
                      cars=list(order), total_laps=self.total_laps)
 
 
+# FastF1 position coordinates are in tenths of a metre. Monza measures 57,347
+# in raw units against a real 5,793 m lap — a ratio of 9.9. Gaps are unaffected
+# because they come from progress times lap time, but any speed derived from
+# the centerline is out by 10x without this.
+UNITS_PER_METRE = 10.0
+
+
 class FastF1Source:
     """Replays a real Grand Prix from official position + timing telemetry."""
 
@@ -341,7 +348,8 @@ class FastF1Source:
                 # Speed straight off the progress derivative — used to tell a
                 # racing car from one parked in the pits or on the grid.
                 c.speed = float(
-                    (p - float(self.prog[c.num][back])) / span * self.cl.length * 3.6
+                    (p - float(self.prog[c.num][back])) / span
+                    * (self.cl.length / UNITS_PER_METRE) * 3.6
                 )
                 c.progress = p
                 sx, sy = self.cl.point_at((p % 1.0) * self.cl.length)

@@ -181,8 +181,13 @@ class Orchestrator:
                 {"num": c.num, "code": c.code, "team": c.team, "color": c.color,
                  "x": round(c.x, 5), "y": round(c.y, 5), "pos": c.pos,
                  "gap": round(c.gap_ahead, 3), "closing": round(c.closing, 4),
-                 "tyre": c.tyre, "age": c.tyre_age}
-                for c in frame.cars
+                 "tyre": c.tyre, "age": c.tyre_age,
+                 "speed": round(c.speed, 1),
+                 # Gap to the car behind, so a driver card can show both sides
+                 # of the sandwich without the client re-deriving race order.
+                 "gap_behind": round(frame.cars[i + 1].gap_ahead, 3)
+                 if i + 1 < len(frame.cars) else 0.0}
+                for i, c in enumerate(frame.cars)
             ]
             self.state.battles = [b.as_dict() for b in battles[:8]]
             self.state.top_score = battles[0].score if battles else 0.0

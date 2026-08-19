@@ -98,7 +98,7 @@
          s.grafana.live ? "grafana live" : (s.grafana.enabled ? "grafana unreachable" : "grafana off"),
          s.grafana.live ? "on" : "warn");
 
-    paintTower(s); paintOnAir(s); paintBattles(s); paintMetrics(s); paintViews(s);
+    paintTower(s); paintOnAir(s); paintBattles(s); paintMetrics(s); paintViews(s); paintFocus(s);
     if (!logFrozen) paintLog(s);
   }
 
@@ -231,6 +231,57 @@
     if (latest) paintLog(latest);
   });
 
+  /* ───────── driver focus card ───────── */
+  function paintFocus(s) {
+    var box = $("focus");
+    if (!selected) { box.hidden = true; return; }
+    var c = (s.cars || []).filter(function (x) { return x.num === selected; })[0];
+    if (!c) { box.hidden = true; return; }
+    box.hidden = false;
+
+    $("fNum").textContent = c.num;
+    $("fNum").style.background = c.color;
+    $("fCode").textContent = c.code;
+    $("fTeam").textContent = c.team || "—";
+    $("fPos").textContent = "P" + c.pos;
+    $("fSpeed").textContent = c.speed ? Math.round(c.speed) + " km/h" : "—";
+
+    var ahead = $("fAhead");
+    ahead.textContent = c.pos === 1 ? "LEADER" : "+" + c.gap.toFixed(3);
+    ahead.className = "fv " + (c.pos === 1 ? "" : c.gap <= 1 ? "good" : c.gap <= 2.2 ? "warn" : "");
+
+    var behind = $("fBehind");
+    behind.textContent = c.gap_behind ? "−" + c.gap_behind.toFixed(3) : "—";
+    behind.className = "fv " + (c.gap_behind && c.gap_behind <= 1 ? "warn" : "");
+
+    $("fTyre").textContent = (c.tyre || "—").slice(0, 1) + " · " + c.age + "L";
+
+    var cl = $("fClosing");
+    if (c.pos === 1) { cl.textContent = "—"; cl.className = "fv"; }
+    else if (c.closing > 0.006) { cl.textContent = "▲ " + c.closing.toFixed(3); cl.className = "fv good"; }
+    else if (c.closing < -0.006) { cl.textContent = "▼ " + Math.abs(c.closing).toFixed(3); cl.className = "fv warn"; }
+    else { cl.textContent = "• holding"; cl.className = "fv"; }
+
+    var onAir = s.on_air && s.on_air.num === selected;
+    var inBattle = (s.battles || []).filter(function (b) {
+      return b.ahead_num === selected || b.behind_num === selected;
+    })[0];
+    var st = $("fState");
+    st.classList.toggle("onair", !!onAir);
+    st.textContent = onAir ? "◉ on air — " + (s.on_air.shot || "onboard")
+      : inBattle ? "in a fight for P" + inBattle.position + " · score " + inBattle.score.toFixed(2)
+      : "clear air";
+
+    var mine = (s.log || []).filter(function (e) {
+      return e.text.indexOf("car " + selected) !== -1 || e.text.indexOf("(" + c.code + ")") !== -1;
+    }).slice(0, 4);
+    $("fLog").innerHTML = mine.length
+      ? mine.map(function (e) { return "<div>" + clock(e.t) + " · " + esc(e.text) + "</div>"; }).join("")
+      : "<div>no decisions involving this car yet</div>";
+  }
+
+  $("fClose").addEventListener("click", function () { if (selected) select(selected); });
+
   /* ───────── view tabs ───────── */
   document.getElementById("tabs").addEventListener("click", function (e) {
     var b = e.target.closest("[data-view]");
@@ -352,11 +403,45 @@
   }
   size(); addEventListener("resize", size);
 
-  function fitter() {
-    var pad = 58, side = Math.min(W - pad * 2, H - pad * 2);
-    var ox = (W - side) / 2, oy = (H - side) / 2;
-    return function (x, y) { return [ox + x * side, oy + y * side]; };
+  /* Canvas is drawn in device-independent pixels, so anything sized as a
+     constant stays physically tiny as the display grows. Everything on the map
+     scales off the fitted track size instead. */
+  var mapScale = 1;
+
+  /* Camera. Tracking a driver closes in on them rather than just ringing a dot
+     three pixels wide — at race pace the interesting thing is the car alongside,
+     and at full-circuit zoom you cannot see it. Eased so the move reads as a
+     camera push rather than a jump cut. */
+  var cam = { z: 1, x: 0.5, y: 0.5 };
+  var camT = { z: 1, x: 0.5, y: 0.5 };
+  var FOLLOW_ZOOM = 3.2;
+
+  function stepCamera(cars) {
+    if (selected) {
+      var me = cars && cars.filter(function (c) { return c.num === selected; })[0];
+      if (me) { camT.z = FOLLOW_ZOOM; camT.x = me.x; camT.y = me.y; }
+    } else {
+      camT.z = 1; camT.x = 0.5; camT.y = 0.5;
+    }
+    var k = reduced ? 1 : 0.12;
+    cam.z += (camT.z - cam.z) * k;
+    // Don't ease across the start/finish wrap or the camera swings the long way.
+    cam.x += Math.abs(camT.x - cam.x) > 0.4 ? (camT.x - cam.x) : (camT.x - cam.x) * k;
+    cam.y += Math.abs(camT.y - cam.y) > 0.4 ? (camT.y - cam.y) : (camT.y - cam.y) * k;
   }
+
+  function fitter() {
+    var pad = Math.max(34, Math.min(W, H) * 0.05);
+    var side = Math.min(W - pad * 2, H - pad * 2);
+    mapScale = Math.max(1, Math.min(2.4, side / 620)) * Math.min(1.7, cam.z);
+    var ox = (W - side) / 2, oy = (H - side) / 2;
+    return function (x, y) {
+      var nx = (x - cam.x) * cam.z + 0.5;
+      var ny = (y - cam.y) * cam.z + 0.5;
+      return [ox + nx * side, oy + ny * side];
+    };
+  }
+  function px(n) { return n * mapScale; }
   function lerp(a, b, k) { return a + (b - a) * k; }
 
   function interpolated() {
@@ -384,19 +469,19 @@
         i === a ? ctx.moveTo(q[0], q[1]) : ctx.lineTo(q[0], q[1]);
       }
       ctx.strokeStyle = "rgba(0,230,118,.32)";
-      ctx.lineWidth = 15; ctx.lineCap = "round"; ctx.stroke();
+      ctx.lineWidth = px(15); ctx.lineCap = "round"; ctx.stroke();
       ctx.lineCap = "butt";
     });
   }
 
   function drawCorners(to) {
     if (!corners.length) return;
-    ctx.font = "9px " + getComputedStyle(document.body).getPropertyValue("--mono");
-    ctx.textAlign = "center"; ctx.fillStyle = "#42425A";
+    ctx.font = Math.round(px(9)) + "px " + getComputedStyle(document.body).getPropertyValue("--mono");
+    ctx.textAlign = "center"; ctx.fillStyle = "#4A5570";
     corners.forEach(function (c) {
       var q = to(c.x, c.y);
-      ctx.beginPath(); ctx.arc(q[0], q[1], 1.6, 0, 6.2832); ctx.fill();
-      ctx.fillText("T" + c.n, q[0], q[1] - 7);
+      ctx.beginPath(); ctx.arc(q[0], q[1], px(1.6), 0, 6.2832); ctx.fill();
+      ctx.fillText("T" + c.n, q[0], q[1] - px(7));
     });
   }
 
@@ -405,14 +490,14 @@
   function placeLabels(items) {
     var placed = [];
     items.forEach(function (it) {
-      var lift = 13, tries = 0;
+      var lift = px(13), tries = 0;
       while (tries < 7) {
         var ly = it.y - lift;
         var clash = placed.some(function (p) {
-          return Math.abs(p.x - it.x) < 26 && Math.abs(p.y - ly) < 12;
+          return Math.abs(p.x - it.x) < px(26) && Math.abs(p.y - ly) < px(12);
         });
         if (!clash) break;
-        lift += 12; tries++;
+        lift += px(12); tries++;
       }
       it.lx = it.x; it.ly = it.y - lift; it.lift = lift;
       placed.push({ x: it.lx, y: it.ly });
@@ -424,8 +509,10 @@
     requestAnimationFrame(draw);
     ctx.clearRect(0, 0, W, H);
     if (!outline.length) return;
-    var to = fitter(), s = latest, cars = interpolated();
+    var s = latest, cars = interpolated();
     if (!cars || !s) return;
+    stepCamera(cars);
+    var to = fitter();
 
     drawZones(to);
 
@@ -435,8 +522,8 @@
       i === 0 ? ctx.moveTo(q[0], q[1]) : ctx.lineTo(q[0], q[1]);
     }
     ctx.closePath();
-    ctx.strokeStyle = "#1C1C26"; ctx.lineWidth = 13; ctx.lineJoin = "round"; ctx.stroke();
-    ctx.strokeStyle = "#2C2C3A"; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.strokeStyle = "#1E222D"; ctx.lineWidth = px(13); ctx.lineJoin = "round"; ctx.stroke();
+    ctx.strokeStyle = "#2A3040"; ctx.lineWidth = px(1.2); ctx.stroke();
 
     drawCorners(to);
 
@@ -453,16 +540,16 @@
       var isSel = selected && (b.ahead_num === selected || b.behind_num === selected);
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(d[0], d[1]);
       if (onAir) {
-        ctx.strokeStyle = "rgba(162,75,255," + (0.45 + k * 0.5).toFixed(3) + ")";
-        ctx.lineWidth = 1.4 + k * 2.6; ctx.shadowColor = "#A24BFF"; ctx.shadowBlur = 12;
+        ctx.strokeStyle = "rgba(255,87,34," + (0.45 + k * 0.5).toFixed(3) + ")";
+        ctx.lineWidth = px(1.4 + k * 2.6); ctx.shadowColor = "#FF5722"; ctx.shadowBlur = px(12);
       } else if (isSel) {
-        ctx.strokeStyle = "rgba(0,213,200,.75)"; ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(255,255,255,.8)"; ctx.lineWidth = px(2);
       } else if (b.drs) {
         ctx.strokeStyle = "rgba(0,230,118," + (0.22 + k * 0.38).toFixed(3) + ")";
-        ctx.lineWidth = 1 + k * 1.4;
+        ctx.lineWidth = px(1 + k * 1.4);
       } else {
-        ctx.strokeStyle = "rgba(148,148,170," + (0.1 + k * 0.3).toFixed(3) + ")";
-        ctx.lineWidth = 0.9;
+        ctx.strokeStyle = "rgba(143,155,186," + (0.1 + k * 0.3).toFixed(3) + ")";
+        ctx.lineWidth = px(0.9);
       }
       ctx.stroke(); ctx.shadowBlur = 0;
     });
@@ -472,31 +559,31 @@
       var p = pos[c.num], tr = trails[c.num] || (trails[c.num] = []);
       var last = tr[tr.length - 1];
       if (last && Math.hypot(p[0] - last[0], p[1] - last[1]) > wrapJump) { tr.length = 0; tr.push([p[0], p[1]]); }
-      else if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > 1.4) tr.push([p[0], p[1]]);
+      else if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > px(1.4)) tr.push([p[0], p[1]]);
       if (tr.length > 14) tr.shift();
       if (tr.length < 2) return;
       var fade = selected && selected !== c.num ? 0.08 : 0.3;
       for (var j = 1; j < tr.length; j++) {
         ctx.beginPath(); ctx.moveTo(tr[j - 1][0], tr[j - 1][1]); ctx.lineTo(tr[j][0], tr[j][1]);
         ctx.strokeStyle = c.color; ctx.globalAlpha = (j / tr.length) * fade;
-        ctx.lineWidth = 2.2; ctx.stroke();
+        ctx.lineWidth = px(2.2); ctx.stroke();
       }
       ctx.globalAlpha = 1;
     });
 
     if (live && pos[live]) {
-      var f = pos[live], r = 15 + Math.sin(performance.now() / 320) * 3;
+      var f = pos[live], r = px(15 + Math.sin(performance.now() / 320) * 3);
       ctx.beginPath(); ctx.arc(f[0], f[1], r, 0, 6.2832);
-      ctx.strokeStyle = "rgba(162,75,255,.85)"; ctx.lineWidth = 1.6;
-      ctx.shadowColor = "#A24BFF"; ctx.shadowBlur = 16; ctx.stroke(); ctx.shadowBlur = 0;
-      ctx.beginPath(); ctx.arc(f[0], f[1], r + 9, 0, 6.2832);
-      ctx.strokeStyle = "rgba(162,75,255,.18)"; ctx.lineWidth = 1; ctx.stroke();
+      ctx.strokeStyle = "rgba(255,87,34,.9)"; ctx.lineWidth = px(1.8);
+      ctx.shadowColor = "#FF5722"; ctx.shadowBlur = px(16); ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.beginPath(); ctx.arc(f[0], f[1], r + px(9), 0, 6.2832);
+      ctx.strokeStyle = "rgba(255,87,34,.22)"; ctx.lineWidth = px(1); ctx.stroke();
     }
     if (selected && pos[selected]) {
       var q2 = pos[selected];
-      ctx.beginPath(); ctx.arc(q2[0], q2[1], 19, 0, 6.2832);
-      ctx.strokeStyle = "rgba(0,213,200,.9)"; ctx.lineWidth = 1.6;
-      ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(q2[0], q2[1], px(19), 0, 6.2832);
+      ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = px(1.6);
+      ctx.setLineDash([px(4), px(4)]); ctx.stroke(); ctx.setLineDash([]);
     }
 
     var labelled = [];
@@ -504,21 +591,21 @@
       var p = pos[c.num], on = c.num === live, sel = c.num === selected;
       var dim = selected && !sel;
       ctx.globalAlpha = dim ? 0.3 : 1;
-      ctx.beginPath(); ctx.arc(p[0], p[1], on || sel ? 5.2 : 3.6, 0, 6.2832);
+      ctx.beginPath(); ctx.arc(p[0], p[1], px(on || sel ? 5.2 : 3.6), 0, 6.2832);
       ctx.fillStyle = c.color;
-      if (on) { ctx.shadowColor = c.color; ctx.shadowBlur = 10; }
+      if (on) { ctx.shadowColor = c.color; ctx.shadowBlur = px(10); }
       ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1;
       if (on || sel || c.pos <= 3) labelled.push({ x: p[0], y: p[1], code: c.code, on: on, sel: sel });
     });
 
     placeLabels(labelled).forEach(function (it) {
-      if (it.lift > 15) {
-        ctx.beginPath(); ctx.moveTo(it.x, it.y - 6); ctx.lineTo(it.lx, it.ly + 3);
-        ctx.strokeStyle = "rgba(148,148,170,.35)"; ctx.lineWidth = 0.8; ctx.stroke();
+      if (it.lift > px(15)) {
+        ctx.beginPath(); ctx.moveTo(it.x, it.y - px(6)); ctx.lineTo(it.lx, it.ly + px(3));
+        ctx.strokeStyle = "rgba(143,155,186,.4)"; ctx.lineWidth = px(0.8); ctx.stroke();
       }
-      ctx.font = "600 10px " + getComputedStyle(document.body).getPropertyValue("--mono");
+      ctx.font = "600 " + Math.round(px(10)) + "px " + getComputedStyle(document.body).getPropertyValue("--mono");
       ctx.textAlign = "center";
-      ctx.fillStyle = it.on ? "#EDEDF4" : it.sel ? "#00D5C8" : "#7A7A92";
+      ctx.fillStyle = it.on ? "#FFFFFF" : it.sel ? "#FFFFFF" : "#8F9BBA";
       ctx.fillText(it.code, it.lx, it.ly);
     });
   }
