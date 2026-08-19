@@ -38,6 +38,8 @@ class Settings:
     prom_push_url: str = os.getenv("GRAFANA_PROM_URL", "")
     prom_user: str = os.getenv("GRAFANA_PROM_USER", "")
     prom_token: str = os.getenv("GRAFANA_PROM_TOKEN", "")
+    # Public (no-login) dashboard share link, surfaced in the nav.
+    grafana_public_url: str = os.getenv("GRAFANA_PUBLIC_URL", "")
 
     # Replay
     race_year: int = int(os.getenv("RACE_YEAR", "2023"))

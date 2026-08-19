@@ -351,3 +351,7 @@ body[data-view="operator"] #viewOperator { display: block; }
 .flow .st { padding: 7px 11px; border-radius: 4px; border: 1px solid var(--glass-line); background: var(--panel-3); color: var(--ink-2); }
 .flow .st.llm { color: var(--cyan); border-color: rgba(0,229,255,.35); }
 .flow .ar { color: var(--ink-3); }
+
+.tab-out { text-decoration: none; color: var(--green); display: inline-flex; align-items: center; }
+.tab-out:hover { background: rgba(0,230,118,.12); color: var(--green); }
+.tab-out[href=""] { display: none; }

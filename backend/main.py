@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import logging
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from .agents.orchestrator import Orchestrator
@@ -31,6 +32,25 @@ logging.basicConfig(
 log = logging.getLogger("gallery")
 
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
+
+
+def _asset_version() -> str:
+    """Short hash of the frontend bundle, used to bust caches on deploy.
+
+    no-cache headers still leave a window where a proxy or an already-open tab
+    keeps yesterday's stylesheet against today's markup, which renders as every
+    view stacked on top of each other. Versioning the URLs makes a stale asset
+    unreachable rather than merely discouraged.
+    """
+    h = hashlib.sha1()
+    for name in sorted(("index.html", "style.css", "app.js")):
+        f = FRONTEND / name
+        if f.exists():
+            h.update(f.read_bytes())
+    return h.hexdigest()[:10]
+
+
+ASSET_V = _asset_version()
 
 app = FastAPI(title="The Gallery", version="1.0.0")
 orch: Orchestrator | None = None
@@ -129,11 +149,12 @@ async def ws(sock: WebSocket) -> None:
 
 
 @app.get("/")
-async def index() -> FileResponse:
-    return FileResponse(
-        FRONTEND / "index.html",
-        headers={"Cache-Control": "no-cache, must-revalidate"},
-    )
+async def index() -> HTMLResponse:
+    html = (FRONTEND / "index.html").read_text()
+    html = html.replace("/static/style.css", f"/static/style.css?v={ASSET_V}")
+    html = html.replace("/static/app.js", f"/static/app.js?v={ASSET_V}")
+    html = html.replace("__GRAFANA_PUBLIC__", settings.grafana_public_url or "")
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache, must-revalidate"})
 
 
 class RevalidatingStatic(StaticFiles):
