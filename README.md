@@ -260,6 +260,26 @@ Incredible wheel-to-wheel action between the two McLaren teammates!
 
 Nothing in the prompt says Piastri and Norris drive for the same team.
 
+## Scaling
+
+One instance, concurrency 60. That is a deliberate ceiling, not an oversight.
+
+The race engine is a per-process global: one orchestrator, one replay, one
+director, fanned out over WebSockets. A second Cloud Run instance would start
+its own independent race, so two viewers could land on different instances and
+see different laps, different cuts, and a circuit switch that only took effect
+for one of them. `--max-instances 1` removes that failure mode. Every viewer
+sees the same race because there is only one race.
+
+Beyond ~60 concurrent viewers this needs the engine split from the web tier —
+a single producer publishing frames to Redis or Pub/Sub, with stateless web
+instances subscribing. That is the correct architecture and it is not built
+here; the honest position is a hard ceiling rather than silent divergence.
+
+Model cost also scales with instances rather than viewers, since the director
+runs per process. One instance serving sixty people costs the same as one
+instance serving one.
+
 ## Known gaps
 
 **No metrics in Grafana Cloud.** The timeseries panels are empty. Grafana

@@ -126,6 +126,11 @@ fi
 say "building and deploying — first run takes ~5 min"
 
 # --min-instances 1   the race loop must keep running between requests
+# --max-instances 1   the race engine is a per-process global, so a second
+#                     instance would run its own independent replay and two
+#                     viewers would see different laps. One instance at
+#                     concurrency 60 is the honest ceiling until the engine is
+#                     split from the web tier and shares state.
 # --no-cpu-throttling CPU stays allocated outside request handling, or the
 #                     10 Hz orchestrator freezes the moment a request ends
 # --timeout 3600      let the live WebSocket stay open
@@ -136,7 +141,7 @@ gcloud run deploy "$SERVICE" \
   --platform managed \
   --allow-unauthenticated \
   --min-instances 1 \
-  --max-instances 3 \
+  --max-instances 1 \
   --cpu 1 --memory 2Gi \
   --no-cpu-throttling \
   --timeout 3600 \
