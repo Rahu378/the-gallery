@@ -261,6 +261,40 @@ Incredible wheel-to-wheel action between the two McLaren teammates!
 
 Nothing in the prompt says Piastri and Norris drive for the same team.
 
+## Does it actually work?
+
+The claim is that a pass which happens off screen is lost, so the measure that
+matters is what fraction of the position changes in a race the feed was
+watching when they happened. That is countable, so it is counted.
+
+```bash
+.venv/bin/python -m eval.capture_rate --race spa
+```
+
+Four full races, 764 position changes, one camera, a four-second minimum hold:
+
+| Circuit | Passes | This pipeline | Follow the leader | Random | Of ceiling |
+|---|---|---|---|---|---|
+| Monza | 160 | **41.9%** | 3.1% | 15.0% | 46.5% |
+| Spa | 214 | **50.5%** | 1.4% | — | 56.0% |
+| Silverstone | 112 | **49.1%** | 1.8% | — | 53.4% |
+| Barcelona | 278 | **42.1%** | 0.0% | — | 48.1% |
+
+The ceiling column matters. One camera cannot be in two places, so an oracle
+that knows every pass in advance still only reaches about 90%. Against what is
+physically catchable, this captures roughly half — with no knowledge of the
+future. Following the leader, which is what an inattentive broadcast does,
+catches almost nothing.
+
+The policies compared are the deterministic ones, because they decide *where
+the camera is*. The Gemini director chooses which of the candidate battles is
+the better story; the candidate set comes from the tension scorer and the cut
+guard. Measuring those in isolation keeps the number reproducible and free of
+model calls.
+
+The same figure is computed live and shown on the metric strip, so it can be
+watched rather than taken on trust.
+
 ## Scaling
 
 One instance, concurrency 60. That is a deliberate ceiling, not an oversight.

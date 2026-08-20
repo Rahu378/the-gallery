@@ -89,6 +89,8 @@ class Orchestrator:
         self.audit_count = 0
         self._last_pos: dict[str, int] = {}
         self._moment = None
+        self.ot_total = 0
+        self.ot_caught = 0
 
     # ------------------------------------------------------------------ log
     def _detect_overtakes(self, frame: Frame) -> list[dict]:
@@ -288,6 +290,11 @@ class Orchestrator:
             for ov in self._detect_overtakes(frame):
                 on_air_num = self.guard.current
                 live = on_air_num in (ov["passer_num"], ov["passed_num"])
+                # The measure that matters: a pass shown is a pass kept, a pass
+                # missed is gone. Counted live so it is visible without anyone
+                # having to run the evaluation.
+                self.ot_total += 1
+                self.ot_caught += 1 if live else 0
                 self._emit("overtake",
                            f"P{ov['pos']} — {ov['passer']} passes {ov['passed']}"
                            + (" · on air" if live else ""))
@@ -488,6 +495,9 @@ class Orchestrator:
                         "pushed": self.writer.sent,
                         "push_error": self.writer.last_error},
             "pairings_scored": s.pairings_scored,
+            "capture": {"total": self.ot_total, "caught": self.ot_caught,
+                        "rate": round(self.ot_caught / self.ot_total, 3)
+                        if self.ot_total else 0.0},
             "transport": {"paused": self.paused, "speed": self.speed,
                           "race_id": self.race_id},
             "races": catalogue(),

@@ -644,10 +644,13 @@
     ts.textContent = model ? d.model : (d.tier === "timeout" ? "model exceeded deadline" : "fallback active");
     ring("rTier", 100, model ? "var(--cyan)" : "var(--amber)", model ? "◆" : "▲");
 
-    var pushed = s.grafana.pushed || 0;
-    $("mPushed").textContent = pushed.toLocaleString();
-    ring("rPush", s.grafana.live ? 100 : 12,
-         s.grafana.live ? "var(--green)" : "var(--amber)", s.grafana.live ? "↑" : "—");
+    var cap = s.capture || {total: 0, caught: 0, rate: 0};
+    $("mCap").textContent = cap.total ? Math.round(cap.rate * 100) + "%" : "—";
+    $("mCap").className = "m-v " + (cap.rate >= 0.35 ? "good" : cap.total ? "warn" : "");
+    $("mCapSub").textContent = cap.total
+      ? cap.caught + " of " + cap.total + " passes this session"
+      : "on camera when it happened";
+    ring("rCap", cap.rate * 100, cap.rate >= 0.35 ? "var(--green)" : "var(--amber)", "");
   }
 
   /* ───────── explain sheet ───────── */
@@ -664,6 +667,8 @@
       body: "<p>The single shot going out. One camera, one global audience — a pass that happens off screen is lost.</p><p>The card shows which car is live, who they are defending from, the gap, the score that won the cut, and the commentary line the director wrote for it.</p>" },
     fastf1: { eyebrow: "Data source", title: "FastF1",
       body: "<p>Open library for Formula 1 timing and telemetry. Supplies position samples, lap and sector times, tyre compound and age, and the circuit geometry used for the corner markers.</p><p>DRS zones are not published anywhere, so they are recovered from the DRS channel in car telemetry and mapped back onto the track.</p>" },
+    capture: { eyebrow: "Effectiveness", title: "Overtakes caught",
+      body: "<p>A pass shown is a pass kept; a pass missed is gone. So the measure that matters is not latency or uptime — it is what fraction of the position changes in a race the feed was actually watching when they happened.</p><p>Measured across four full races, 764 position changes: this pipeline catches 42-51%. Following the leader, which is what a lazy broadcast does, catches 0-3%. An oracle that knows every pass in advance and still has only one camera and a four-second hold reaches about 90% — so roughly half of everything physically catchable is being caught, with no knowledge of the future.</p><p>Run it yourself: <code>python -m eval.capture_rate --race spa</code></p>" },
     quota: { eyebrow: "Capacity", title: "Model quota",
       body: "<p>Vertex serves Gemini from dynamic shared quota — regional capacity rather than a fixed per-minute ceiling. A 429 arrives with no number and no retry delay attached.</p><p>When one lands, the director backs off 6-10 seconds with jitter and every decision in that window is taken deterministically and labelled as such. A fixed thirty-second backoff, which is the obvious default, throws away most of a race for a transient blip.</p>" },
     status: { eyebrow: "Health", title: "Systems",
@@ -686,6 +691,12 @@
       } else if (key === "tension") {
         extra = '<dl class="kv"><dt>pairings scored</dt><dd>' + latest.pairings_scored.toLocaleString() + "</dd>"
           + "<dt>in range now</dt><dd>" + (latest.battles || []).length + "</dd></dl>";
+      } else if (key === "capture") {
+        var c = latest.capture || {};
+        extra = '<dl class="kv"><dt>this session</dt><dd>' + (c.caught || 0) + " of " + (c.total || 0) + "</dd>"
+          + "<dt>rate</dt><dd>" + Math.round((c.rate || 0) * 100) + "%</dd>"
+          + "<dt>follow-the-leader</dt><dd>0-3%</dd>"
+          + "<dt>oracle ceiling</dt><dd>~90%</dd></dl>";
       } else if (key === "grafana") {
         extra = '<dl class="kv"><dt>reachable</dt><dd>' + (latest.grafana.live ? "yes" : "no") + "</dd>"
           + "<dt>series pushed</dt><dd>" + (latest.grafana.pushed || 0).toLocaleString() + "</dd></dl>";
