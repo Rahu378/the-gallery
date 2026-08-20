@@ -320,6 +320,21 @@ commentary voices, the field, and what the agent decided. A 3D circuit on a
 390px screen is decoration and the metric rings are unreadable at that size,
 so the canvas and Three.js are not booted at all there.
 
+## Cost
+
+The director only runs while somebody is connected. An empty gallery does not
+need one: the replay keeps going on the deterministic tier, which costs
+nothing, and Gemini is engaged the moment a viewer opens the page.
+
+This was not a micro-optimisation. Ungated, the director called the model
+every ten seconds around the clock — 8,640 calls a day into an empty room,
+which was almost the entire bill. Measured at roughly $24/day of credit, most
+of it Vertex.
+
+Cloud Run still holds one warm instance so the race loop survives between
+requests, which is a few dollars a month. Delete the service when you are done
+with it.
+
 ## Scaling
 
 One instance, concurrency 250. That is a deliberate ceiling, not an oversight.

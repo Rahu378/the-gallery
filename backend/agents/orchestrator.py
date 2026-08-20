@@ -89,6 +89,7 @@ class Orchestrator:
         self.audit_count = 0
         self._last_pos: dict[str, int] = {}
         self._moment = None
+        self._idle_since = None
         self.ot_total = 0
         self.ot_caught = 0
 
@@ -332,7 +333,25 @@ class Orchestrator:
             spent = time.perf_counter() - started
             await asyncio.sleep(max(0.0, dt - spent))
 
+    @property
+    def watched(self) -> bool:
+        """Is anybody actually looking at the feed?"""
+        return bool(self._subs)
+
     async def _maybe_direct(self, frame: Frame, battles: list[Battle]) -> None:
+        # An empty gallery does not need a director. The race keeps running on
+        # the deterministic tier — which costs nothing — and Gemini is engaged
+        # only while somebody is connected. Left ungated this called the model
+        # 8,640 times a day into an empty room, which was most of the bill.
+        if not self.watched:
+            if self._idle_since is None:
+                self._idle_since = frame.t
+                self._emit("system", "no viewers — director idle, replay continues")
+            return
+        if self._idle_since is not None:
+            self._idle_since = None
+            self._emit("system", "viewer connected — director active")
+
         candidate = next((b for b in battles if b.score >= settings.battle_threshold), None)
 
         # Track the score of whatever is on air so the guard can compare.
@@ -489,6 +508,7 @@ class Orchestrator:
                          "blocked": self.director.block_reason,
                          "configured": settings.gemini_ready,
                          "mcp": self.director.mcp_ready,
+                         "idle": self._idle_since is not None,
                          },
             "grafana": {"live": s.grafana_live, "url": grafana.dashboard_url,
                         "enabled": grafana.enabled,
