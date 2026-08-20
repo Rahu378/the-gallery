@@ -3,6 +3,7 @@
 Agent-directed world feed for a Formula 1 broadcast.
 
 **Live app** — https://the-gallery-742484896712.us-central1.run.app
+
 **Dashboard** — https://bluehalibut1967.grafana.net/public-dashboards/d86453f15cce4974a052692a6374e6c4 (no login)
 
 Built for the Agentic Cinema hackathon, Grafana track.
