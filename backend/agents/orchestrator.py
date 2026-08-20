@@ -87,8 +87,39 @@ class Orchestrator:
         self._restart = False
         self.circuit_rev = 0
         self.audit_count = 0
+        self._last_pos: dict[str, int] = {}
+        self._moment = None
 
     # ------------------------------------------------------------------ log
+    def _detect_overtakes(self, frame: Frame) -> list[dict]:
+        """Positions that actually changed hands since the last tick.
+
+        This is the payoff the whole pipeline aims at — everything upstream is
+        prediction, and a completed pass is the one moment that is not. Worth
+        knowing precisely rather than inferring from a score crossing a line.
+        """
+        now = {c.num: c.pos for c in frame.cars}
+        code = {c.num: c.code for c in frame.cars}
+        events: list[dict] = []
+        if self._last_pos:
+            for num, pos in now.items():
+                was = self._last_pos.get(num)
+                if was is None or pos >= was:
+                    continue
+                # Gained a place: name whoever it came from.
+                lost = [n for n, p in now.items()
+                        if self._last_pos.get(n) == pos and p == was]
+                if not lost:
+                    continue
+                events.append({
+                    "pos": pos,
+                    "passer": code.get(num, num), "passer_num": num,
+                    "passed": code.get(lost[0], lost[0]), "passed_num": lost[0],
+                    "t": frame.t,
+                })
+        self._last_pos = now
+        return events
+
     def _emit(self, kind: str, text: str, tier: str = "") -> None:
         self._log.insert(0, LogEntry(self.state.race_t, kind, text, tier))
         del self._log[24:]
@@ -254,6 +285,18 @@ class Orchestrator:
             battles = self.scorer.score_frame(frame)
             self._push_metrics(frame, battles)
 
+            for ov in self._detect_overtakes(frame):
+                on_air_num = self.guard.current
+                live = on_air_num in (ov["passer_num"], ov["passed_num"])
+                self._emit("overtake",
+                           f"P{ov['pos']} — {ov['passer']} passes {ov['passed']}"
+                           + (" · on air" if live else ""))
+                metrics.inc("gallery_overtakes_total", on_air="1" if live else "0")
+                # A pass the director was actually watching is the moment worth
+                # reacting to. One it missed is worth recording, not celebrating.
+                if live:
+                    self._moment = {**ov, "at": frame.t}
+
             self.state.lap = frame.lap
             self.state.race_t = frame.t
             self.state.total_laps = frame.total_laps or self.state.total_laps
@@ -328,7 +371,7 @@ class Orchestrator:
         if chosen.ahead_num == self.guard.current and self.state.on_air:
             self.guard.current_score = chosen.score
             self.state.on_air.update({
-                "line": decision.line, "gap": chosen.gap,
+                "line": decision.line, "colour": decision.colour, "gap": chosen.gap,
                 "score": chosen.score, "against": chosen.behind, "hot": True,
             })
             self._emit("hold", f"holding car {chosen.ahead_num} — {decision.line}")
@@ -354,6 +397,7 @@ class Orchestrator:
             "num": chosen.ahead_num, "code": chosen.ahead,
             "against": chosen.behind, "against_num": chosen.behind_num,
             "shot": decision.shot, "line": decision.line,
+            "colour": decision.colour,
             "score": chosen.score, "gap": chosen.gap,
             "position": chosen.position, "confidence": decision.confidence,
             "tier": decision.tier, "hot": True,
@@ -431,6 +475,7 @@ class Orchestrator:
             "circuit": s.circuit, "source": s.source,
             "cars": s.cars, "battles": s.battles,
             "on_air": s.on_air, "passed_over": s.passed_over,
+            "moment": self._moment,
             "top_score": round(s.top_score, 3),
             "director": {"tier": s.director_tier, "latency_ms": s.director_latency,
                          "model": settings.director_model,

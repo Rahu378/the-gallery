@@ -23,8 +23,12 @@ from ..config import settings
 
 log = logging.getLogger("gallery.commentary")
 
-# Puck is the liveliest of the prebuilt voices, which suits a race call.
-VOICE = "Puck"
+# Two voices, as on a real broadcast. Charon is lower and steadier — the
+# play-by-play. Puck is brighter and faster — the ex-driver reacting beside
+# them. A single voice reading both halves sounds like a press release.
+LEAD_SPEAKER, LEAD_VOICE = "Lead", "Charon"
+COLOUR_SPEAKER, COLOUR_VOICE = "Colour", "Puck"
+VOICE = LEAD_VOICE
 SAMPLE_RATE = 24000
 MAX_CACHE = 48
 
@@ -70,12 +74,14 @@ class Commentary:
     def key(line: str) -> str:
         return hashlib.sha1(line.strip().lower().encode()).hexdigest()[:16]
 
-    async def speak(self, line: str) -> bytes | None:
-        """WAV bytes for a commentary line, or None if it could not be made."""
+    async def speak(self, line: str, colour: str = "",
+                    big: bool = False) -> bytes | None:
+        """WAV bytes for the call. Two voices when there is a colour line."""
         line = (line or "").strip()
+        colour = (colour or "").strip()
         if not line or not self.ready:
             return None
-        k = self.key(line)
+        k = self.key(line + "|" + colour + ("|!" if big else ""))
 
         async with self._lock:
             hit = self._cache.get(k)
@@ -86,16 +92,43 @@ class Commentary:
         try:
             from google.genai import types
             client = self._ensure()
+
+            if colour:
+                # Direction in the prompt shapes delivery — the model reads the
+                # framing, not just the words. A pass that has just happened
+                # should not be read at the same pitch as a gap report.
+                mood = ("A move has just been completed. Call it like it is "
+                        "happening, then react."
+                        if big else
+                        "Live race commentary, measured and specific.")
+                script = (f"{mood}\n{LEAD_SPEAKER}: {line}\n"
+                          f"{COLOUR_SPEAKER}: {colour}")
+                speech = types.SpeechConfig(
+                    multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
+                        speaker_voice_configs=[
+                            types.SpeakerVoiceConfig(
+                                speaker=LEAD_SPEAKER,
+                                voice_config=types.VoiceConfig(
+                                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                        voice_name=LEAD_VOICE))),
+                            types.SpeakerVoiceConfig(
+                                speaker=COLOUR_SPEAKER,
+                                voice_config=types.VoiceConfig(
+                                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                        voice_name=COLOUR_VOICE))),
+                        ]))
+            else:
+                script = line
+                speech = types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name=LEAD_VOICE)))
+
             resp = await client.aio.models.generate_content(
                 model=self.model,
-                contents=line,
+                contents=script,
                 config=types.GenerateContentConfig(
-                    response_modalities=["AUDIO"],
-                    speech_config=types.SpeechConfig(
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                voice_name=VOICE))),
-                ),
+                    response_modalities=["AUDIO"], speech_config=speech),
             )
             part = resp.candidates[0].content.parts[0]
             pcm = part.inline_data.data

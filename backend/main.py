@@ -158,10 +158,10 @@ async def switch_race(race_id: str) -> dict:
 
 
 @app.get("/api/commentary")
-async def commentary_audio(line: str = ""):
-    """Speak a commentary line. Only ever called when a client enables audio."""
+async def commentary_audio(line: str = "", colour: str = "", big: int = 0):
+    """Speak the call. Only ever reached when a client enables audio."""
     from .agents.commentary import commentary
-    wav = await commentary.speak(line)
+    wav = await commentary.speak(line, colour, big=bool(big))
     if not wav:
         return PlainTextResponse(
             commentary.last_error or "no audio", status_code=503)

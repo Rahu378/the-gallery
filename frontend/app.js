@@ -89,7 +89,9 @@
     var lead = (s.cars || [])[0], second = (s.cars || [])[1];
     $("hdLeader").textContent = lead ? lead.code : "—";
     $("hdGap").textContent = second ? "+" + second.gap.toFixed(3) : "—";
-    $("hdAir").textContent = s.on_air ? s.on_air.code + " · " + (s.on_air.shot || "").toLowerCase() : "standby";
+    // Shot type dropped from the header: it pushed the row past the bar width
+    // and wrapped it onto a second line. It is already on the on-air card.
+    $("hdAir").textContent = s.on_air ? s.on_air.code : "standby";
     el.mapSrc.textContent = s.source === "fastf1" ? "real telemetry · fastf1" : "synthetic replay";
     el.towerCount.textContent = s.cars.length + " cars";
     el.fScored.textContent = (s.pairings_scored || 0).toLocaleString();
@@ -114,7 +116,7 @@
          faults.length ? faults.join(" · ") : "all systems nominal",
          faults.length ? "warn" : "on");
 
-    paintTower(s); paintOnAir(s); paintBattles(s); paintMetrics(s); paintViews(s); paintFocus(s); paintTransport(s); paintPassed(s); refreshCircuit(s);
+    paintTower(s); paintOnAir(s); paintBattles(s); paintMetrics(s); paintViews(s); paintFocus(s); paintTransport(s); paintPassed(s); checkMoment(s); refreshCircuit(s);
     if (view3d && mapMode === "3d") view3d.setState(s, selected);
     if (!logFrozen) paintLog(s);
   }
@@ -202,7 +204,7 @@
     if (key !== lastCutKey) {
       lastCutKey = key;
       if (!reduced) { el.flash.classList.remove("go"); void el.flash.offsetWidth; el.flash.classList.add("go"); }
-      speak(a.line);
+      speak(a, false);
     }
     var model = isModelTier(a.tier);
     el.onair.classList.toggle("hot", !!a.hot && model);
@@ -214,6 +216,8 @@
     el.oaTier.classList.toggle("fallback", !model);
     el.oaAgainst.textContent = "P" + a.position + " · " + a.code + " defending from " + a.against;
     el.oaLine.textContent = a.line || "—";
+    var col = $("oaColour");
+    if (col) { col.textContent = a.colour || ""; col.hidden = !a.colour; }
     el.oaHold.textContent = (s.hold || 0).toFixed(1) + "s";
     el.oaConf.textContent = a.confidence ? Math.round(a.confidence * 100) + "%" : "—";
     el.oaGap.textContent = a.gap.toFixed(2) + "s";
@@ -285,7 +289,53 @@
   });
 
   /* ───────── spoken commentary ───────── */
-  var audioOn = false, audioEl = null, spokenKey = "";
+  var audioOn = false, audioEl = null, spokenKey = "", lastMomentT = null, actx = null;
+
+  /* Crowd swell, synthesised rather than sampled.
+   *
+   * A real crowd recording is someone's copyright and this repo is public, so
+   * it is built from filtered noise: a band-passed burst with a fast attack
+   * and a long tail, plus a slow wobble so it does not sit dead still. It is
+   * a suggestion of a grandstand, not a recording of one — which is the right
+   * scale for something that should sit under a commentator, not replace him.
+   *
+   * Only fires on a completed pass the feed was actually on. Cheering every
+   * cut would make the cheer mean nothing. */
+  function crowd(intensity) {
+    if (!audioOn) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === "suspended") actx.resume();
+      var dur = 2.6 + intensity * 1.6;
+      var rate = actx.sampleRate;
+      var buf = actx.createBuffer(1, Math.floor(rate * dur), rate);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+
+      var src = actx.createBufferSource(); src.buffer = buf;
+      var bp = actx.createBiquadFilter();
+      bp.type = "bandpass"; bp.frequency.value = 700; bp.Q.value = 0.55;
+      var lp = actx.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 2600;
+
+      var gain = actx.createGain();
+      var peak = 0.05 + intensity * 0.1;
+      var t0 = actx.currentTime;
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(peak, t0 + 0.28);
+      gain.gain.exponentialRampToValueAtTime(peak * 0.55, t0 + dur * 0.45);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+
+      // slow swell so the noise breathes instead of hissing flat
+      var lfo = actx.createOscillator(), lfoGain = actx.createGain();
+      lfo.frequency.value = 0.7; lfoGain.gain.value = peak * 0.3;
+      lfo.connect(lfoGain); lfoGain.connect(gain.gain);
+
+      src.connect(bp); bp.connect(lp); lp.connect(gain); gain.connect(actx.destination);
+      src.start(t0); lfo.start(t0);
+      src.stop(t0 + dur); lfo.stop(t0 + dur);
+    } catch (e) { /* audio is never load-bearing */ }
+  }
 
   $("oaAudio").addEventListener("click", function () {
     audioOn = !audioOn;
@@ -294,25 +344,37 @@
     b.textContent = audioOn ? "🔊 Audio" : "🔇 Audio";
     if (!audioOn && audioEl) { audioEl.pause(); audioEl = null; }
     // Clicking is the gesture browsers require before audio may play, so the
-    // current line is spoken immediately rather than waiting for the next cut.
-    if (audioOn && latest && latest.on_air) speak(latest.on_air.line);
+    // current call is spoken immediately rather than waiting for the next cut.
+    if (audioOn && latest && latest.on_air) speak(latest.on_air);
   });
 
-  function speak(line) {
-    if (!audioOn || !line) return;
-    var key = line;
+  function speak(air, big) {
+    if (!audioOn || !air || !air.line) return;
+    var key = air.line + "|" + (air.colour || "");
     if (key === spokenKey) return;
     spokenKey = key;
     var b = $("oaAudio");
     b.classList.add("speaking");
     if (audioEl) audioEl.pause();
-    audioEl = new Audio("/api/commentary?line=" + encodeURIComponent(line));
+    var q = "/api/commentary?line=" + encodeURIComponent(air.line)
+          + "&colour=" + encodeURIComponent(air.colour || "")
+          + (big ? "&big=1" : "");
+    audioEl = new Audio(q);
     audioEl.addEventListener("ended", function () { b.classList.remove("speaking"); });
     audioEl.addEventListener("error", function () {
-      b.classList.remove("speaking");
-      b.textContent = "🔇 unavailable";
+      b.classList.remove("speaking"); b.textContent = "🔇 unavailable";
     });
     audioEl.play().catch(function () { b.classList.remove("speaking"); });
+  }
+
+  /* A completed pass the feed was on: the one moment worth reacting to. */
+  function checkMoment(s) {
+    var m = s.moment;
+    if (!m || m.at === lastMomentT) return;
+    lastMomentT = m.at;
+    var front = m.pos <= 6 ? 1 : m.pos <= 12 ? 0.6 : 0.35;
+    crowd(front);
+    if (s.on_air) { spokenKey = ""; speak(s.on_air, true); }
   }
 
   /* ───────── passed over ───────── */

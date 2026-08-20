@@ -58,7 +58,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   border-bottom: 1px solid var(--line);
   font-family: var(--mono); font-size: 11px;
   letter-spacing: .16em; text-transform: uppercase;
-  color: var(--ink-3); flex-wrap: wrap;
+  color: var(--ink-3); flex-wrap: nowrap; overflow: hidden;
 }
 .brand { display: flex; align-items: center; gap: 9px; color: var(--ink); letter-spacing: .28em; font-weight: 600; }
 .brand .mark { width: 3px; height: 15px; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
@@ -612,3 +612,11 @@ body[data-view="operator"] #viewOperator { display: block; }
 
 @media (min-width: 1800px) { .oa-audio { font-size: 12px; padding: 6px 13px; } .po { font-size: 13px; } }
 @media (min-width: 2400px) { .oa-audio { font-size: 14px; padding: 8px 16px; } .po { font-size: 15.5px; } }
+
+.onair-colour {
+  margin: 8px 0 0; font-size: 15px; line-height: 1.45; color: var(--ink-2);
+  padding-left: 12px; border-left: 2px solid rgba(0,229,255,.4);
+}
+.onair-colour[hidden] { display: none; }
+@media (min-width: 1800px) { .onair-colour { font-size: 18px; } }
+@media (min-width: 2400px) { .onair-colour { font-size: 23px; } }

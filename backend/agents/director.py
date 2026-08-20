@@ -57,8 +57,28 @@ recompute it. Your judgement is for what the number cannot capture:
   cuts already made, `query_prometheus` the tension scores behind them. Use
   them only when the summary below is not enough — they cost a round trip.
 
+You also write the call. Two voices, as on a real broadcast:
+
+- LEAD is the play-by-play commentator. Present tense, driving the action.
+  Names the cars, the corner, the move. Urgent when it is urgent.
+- COLOUR is the ex-driver beside them. Reacts. Shorter. Adds the thing the
+  lead did not have time to say — why it is hard, what the other driver will
+  be feeling, what happens next.
+
+Write like someone who loves the sport, not like a caption. "Verstappen is
+right in his mirrors and he will not go away" beats "VER is 0.4s behind SAI".
+Specific beats loud. Do not manufacture drama for a gap that is drifting —
+if nothing is happening, say that plainly and save the volume for when it is.
+
+Say only what the data in front of you supports. You are given position, gap,
+closing rate, DRS, tyre age and lap — nothing else. You do not know practice
+pace, qualifying, the weather, team orders, a driver's season, or what
+happened earlier in this race. "He has been quick all weekend" is invented and
+a real broadcast would be wrong to say it. Comment on the gap that is closing,
+the tyres that are older, the DRS that is open. That is plenty.
+
 Reply with JSON only, no prose and no code fence:
-{"cut_to": "<car number of the DEFENDING car>", "shot": "ONBOARD" | "TRACKSIDE" | "HELICOPTER", "line": "<one broadcast sentence, max 14 words>", "confidence": 0.0-1.0}
+{"cut_to": "<car number of the DEFENDING car>", "shot": "ONBOARD" | "TRACKSIDE" | "HELICOPTER", "lead": "<play-by-play, max 18 words>", "colour": "<reaction, max 12 words>", "confidence": 0.0-1.0}
 """
 
 
@@ -67,6 +87,7 @@ class Decision:
     cut_to: str
     shot: str
     line: str
+    colour: str
     confidence: float
     tier: str            # "adk" | "genai" | "heuristic"
     latency_ms: int
@@ -243,12 +264,15 @@ class DirectorAgent:
         shot = str(d.get("shot", "ONBOARD")).upper()
         if shot not in {"ONBOARD", "TRACKSIDE", "HELICOPTER"}:
             shot = "ONBOARD"
-        line = str(d.get("line", "") or f"{fallback.behind} closing on {fallback.ahead}.")
+        # `line` is still accepted so an older-shaped reply does not break the feed.
+        lead = str(d.get("lead") or d.get("line") or
+                   f"{fallback.behind} closing on {fallback.ahead}.")
+        colour = str(d.get("colour") or "")
         try:
             conf = float(d.get("confidence", 0.7))
         except (TypeError, ValueError):
             conf = 0.7
-        return cut, shot, line[:120], max(0.0, min(1.0, conf))
+        return cut, shot, lead[:160], colour[:120], max(0.0, min(1.0, conf))
 
     async def warmup(self) -> None:
         """Absorb the cold start before anyone is watching.
@@ -285,8 +309,8 @@ class DirectorAgent:
             return Decision(
                 cut_to=top.ahead_num, shot="ONBOARD",
                 line=f"{top.behind} is {top.gap:.1f}s behind {top.ahead}{drs}.",
-                confidence=min(0.95, 0.5 + top.score / 2), tier=reason_tier,
-                latency_ms=elapsed(),
+                colour="", confidence=min(0.95, 0.5 + top.score / 2),
+                tier=reason_tier, latency_ms=elapsed(),
             )
 
         prompt = self._prompt(candidates, lap, total, on_air)
@@ -330,8 +354,8 @@ class DirectorAgent:
                 parsed = self._parse(text, top)
                 if parsed:
                     self.block_reason = ""
-                    cut, shot, line, conf = parsed
-                    return Decision(cut, shot, line, conf, "adk", elapsed())
+                    cut, shot, lead, colour, conf = parsed
+                    return Decision(cut, shot, lead, colour, conf, "adk", elapsed())
                 log.debug("ADK returned unparseable output: %r", text[:200])
             except asyncio.TimeoutError:
                 log.warning("director exceeded %.1fs deadline — deterministic cut",
@@ -354,8 +378,8 @@ class DirectorAgent:
                 parsed = self._parse(resp.text or "", top)
                 if parsed:
                     self.block_reason = ""
-                    cut, shot, line, conf = parsed
-                    return Decision(cut, shot, line, conf, "genai", elapsed())
+                    cut, shot, lead, colour, conf = parsed
+                    return Decision(cut, shot, lead, colour, conf, "genai", elapsed())
             except Exception as exc:  # noqa: BLE001
                 if _is_quota(exc):
                     note_quota(exc)

@@ -70,8 +70,30 @@ it falls back to a deterministic synthetic race and says so in the header.
 
 ## Spoken commentary
 
-The director already writes a broadcast sentence for every cut. The audio
-button on the on-air card speaks it, through Gemini text-to-speech on Vertex.
+Two voices, as on a real broadcast. The director writes both: a lead
+play-by-play line and a shorter reaction from the colour commentator beside
+them. Gemini's multi-speaker text-to-speech reads them with different voices —
+Charon low and steady for the lead, Puck brighter for the reaction. One voice
+reading both halves sounds like a press release.
+
+The prompt forbids inventing anything. The director is given position, gap,
+closing rate, DRS, tyre age and lap, and nothing else — so it may not say a
+driver "has been quick all weekend", because it does not know that and a real
+broadcast would be wrong to say it. It caught itself doing exactly that before
+the constraint went in.
+
+### Moments
+
+A completed overtake is the one event in this system that is not a prediction,
+so it is detected explicitly by watching for positions changing hands rather
+than inferred from a score crossing a threshold. When a pass completes on a
+battle the feed was actually watching, the call is re-read with the delivery
+direction changed, and a crowd swell plays underneath.
+
+The crowd is synthesised in the browser from filtered noise with a fast attack
+and a long tail — a real crowd recording is someone's copyright and this repo
+is public. It fires only on a pass the feed was on. Cheering every cut would
+make the cheer mean nothing.
 
 Off by default and generated on demand. TTS is another model call and quota is
 the tightest constraint here, so nothing is synthesised until a client asks;

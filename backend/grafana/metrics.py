@@ -71,3 +71,5 @@ metrics.describe("gallery_director_latency_ms", "gauge",
 metrics.describe("gallery_pairings_scored_total", "counter",
                  "Adjacent pairings scored by the tension agent")
 metrics.describe("gallery_race_lap", "gauge", "Current lap of the replayed race")
+metrics.describe("gallery_overtakes_total", "counter",
+                 "Completed position changes, split by whether the feed was on it")
