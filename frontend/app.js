@@ -610,22 +610,44 @@
   }
 
   /* ───────── metric strip ───────── */
+  function ring(id, pct, colour, glyph) {
+    var e = $(id);
+    if (!e) return;
+    e.style.setProperty("--pct", Math.max(0, Math.min(100, Math.round(pct))));
+    e.style.setProperty("--ring", colour);
+    e.setAttribute("data-glyph", glyph);
+  }
+
   function paintMetrics(s) {
     var d = s.director, model = isModelTier(d.tier);
-    var q = $("mQuota"), qs = $("mQuotaSub");
-    if (d.blocked) { q.textContent = "BACKING OFF"; q.className = "m-v warn"; qs.textContent = d.blocked; }
-    else { q.textContent = "OK"; q.className = "m-v good"; qs.textContent = "within quota"; }
 
-    var lat = $("mLat");
-    lat.textContent = d.latency_ms ? (d.latency_ms / 1000).toFixed(2) + "s" : "—";
-    lat.className = "m-v " + (!d.latency_ms ? "" : d.latency_ms < 2500 ? "good" : "warn");
+    var q = $("mQuota"), qs = $("mQuotaSub");
+    if (d.blocked) {
+      q.textContent = "BACKING OFF"; q.className = "m-v warn"; qs.textContent = d.blocked;
+      ring("rQuota", 100, "var(--amber)", "!");
+    } else {
+      q.textContent = "OK"; q.className = "m-v good"; qs.textContent = "within quota";
+      ring("rQuota", 100, "var(--green)", "✓");
+    }
+
+    var lat = $("mLat"), ms = d.latency_ms || 0;
+    lat.textContent = ms ? (ms / 1000).toFixed(2) + "s" : "—";
+    lat.className = "m-v " + (!ms ? "" : ms < 2500 ? "good" : "warn");
+    // Arc reads against the 4s deadline, so it fills as a decision approaches
+    // the point where it would be abandoned.
+    ring("rLat", ms ? (ms / 4000) * 100 : 0,
+         ms < 2500 ? "var(--green)" : "var(--amber)", "");
 
     var tier = $("mTier"), ts = $("mTierSub");
     tier.textContent = model ? "GEMINI" : "DETERMINISTIC";
     tier.className = "m-v " + (model ? "live" : "warn");
     ts.textContent = model ? d.model : (d.tier === "timeout" ? "model exceeded deadline" : "fallback active");
+    ring("rTier", 100, model ? "var(--cyan)" : "var(--amber)", model ? "◆" : "▲");
 
-    $("mPushed").textContent = (s.grafana.pushed || 0).toLocaleString();
+    var pushed = s.grafana.pushed || 0;
+    $("mPushed").textContent = pushed.toLocaleString();
+    ring("rPush", s.grafana.live ? 100 : 12,
+         s.grafana.live ? "var(--green)" : "var(--amber)", s.grafana.live ? "↑" : "—");
   }
 
   /* ───────── explain sheet ───────── */

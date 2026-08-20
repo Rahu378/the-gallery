@@ -26,8 +26,12 @@
   --red: #FF3D57;
   --sel: #FFFFFF;       /* operator selection */
 
-  --glass: rgba(255,255,255,.04);
-  --glass-line: rgba(255,255,255,.08);
+  --glass: rgba(255,255,255,.045);
+  --glass-line: rgba(255,255,255,.07);
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 18px 44px -26px rgba(0,0,0,.9);
+  --shadow-lift: 0 26px 60px -28px rgba(0,0,0,.95);
 
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
   --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
@@ -165,15 +169,21 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 
 /* ───────────────── on air ───────────────── */
 .onair-wrap { padding: 12px 12px 0; flex-shrink: 0; }
+/* Depth comes from a corner-anchored highlight plus a long soft shadow, not
+   from a flat wash — a card lit from one side reads as an object, a card with
+   an even overlay reads as a rectangle. */
 .onair {
-  border: 1px solid var(--glass-line); border-radius: 8px;
-  background: linear-gradient(180deg, var(--glass), rgba(255,255,255,.01)), var(--panel-2);
+  border: 1px solid var(--glass-line); border-radius: var(--radius);
+  background:
+    radial-gradient(130% 160% at 0% 0%, rgba(255,255,255,.06), transparent 58%),
+    var(--panel-2);
+  box-shadow: var(--shadow);
   backdrop-filter: blur(12px);
   overflow: hidden; transition: border-color .3s, box-shadow .3s;
 }
 .onair.hot {
-  border-color: rgba(255,87,34,.65);
-  box-shadow: 0 0 0 1px rgba(255,87,34,.2), 0 12px 50px -18px rgba(255,87,34,.75);
+  border-color: rgba(255,87,34,.6);
+  box-shadow: 0 0 0 1px rgba(255,87,34,.16), 0 26px 70px -26px rgba(255,87,34,.7);
 }
 .onair.fallback { border-color: rgba(255,193,7,.55); box-shadow: 0 0 0 1px rgba(255,193,7,.16); }
 
@@ -293,8 +303,8 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .sheet { position: fixed; inset: 0; z-index: 100; background: rgba(4,4,8,.72); display: flex; align-items: center; justify-content: center; padding: 24px; }
 .sheet[hidden] { display: none; }
 .sheet-in {
-  position: relative; max-width: 560px; width: 100%; max-height: 78vh; overflow-y: auto;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  position: relative; max-width: 580px; width: 100%; max-height: 78vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--glass-line); border-radius: var(--radius);
   padding: 26px 28px; box-shadow: 0 30px 90px -30px rgba(0,0,0,.9);
 }
 .sheet-x { position: absolute; right: 14px; top: 10px; font-size: 22px; color: var(--ink-3); line-height: 1; }
@@ -328,14 +338,18 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   gap: 10px; padding: 10px 12px 0; flex-shrink: 0;
 }
 .metric {
-  display: flex; flex-direction: column; gap: 4px; text-align: left;
-  padding: 10px 12px; border-radius: 6px;
+  display: flex; flex-direction: row; align-items: center; gap: 13px; text-align: left;
+  padding: 14px 16px; border-radius: var(--radius-sm);
   border: 1px solid var(--glass-line);
-  background: linear-gradient(180deg, var(--glass), rgba(255,255,255,.01)), var(--panel-2);
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(255,255,255,.055), transparent 60%),
+    var(--panel-2);
+  box-shadow: var(--shadow);
   backdrop-filter: blur(10px);
-  transition: border-color .2s, transform .12s;
+  transition: border-color .2s, transform .14s, box-shadow .2s;
 }
-.metric:hover { border-color: rgba(0,229,255,.4); transform: translateY(-1px); }
+.metric-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.metric:hover { border-color: rgba(0,229,255,.4); transform: translateY(-2px); box-shadow: var(--shadow-lift); }
 .m-k { font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-3); }
 .m-v { font-family: var(--mono); font-size: 20px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 .m-v.good { color: var(--green); }
@@ -355,7 +369,7 @@ body[data-view="operator"] #viewOperator { display: block; }
 .viewpane p { color: var(--ink-2); font-size: 13.5px; line-height: 1.6; margin: 0 0 14px; max-width: 68ch; }
 .viewpane a { color: var(--cyan); }
 .vcard {
-  border: 1px solid var(--glass-line); border-radius: 6px; padding: 14px 16px;
+  border: 1px solid var(--glass-line); border-radius: var(--radius); padding: 18px 20px;
   background: linear-gradient(180deg, var(--glass), rgba(255,255,255,.01)), var(--panel-2);
   margin-bottom: 12px;
 }
@@ -440,7 +454,7 @@ body[data-view="operator"] #viewOperator { display: block; }
    map while the camera closes in on them. */
 .focus {
   position: absolute; right: 16px; top: 14px; width: 268px;
-  border: 1px solid var(--glass-line); border-radius: 8px;
+  border: 1px solid var(--glass-line); border-radius: var(--radius);
   background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.01)), rgba(26,29,38,.92);
   backdrop-filter: blur(14px);
   box-shadow: 0 18px 60px -22px rgba(0,0,0,.9);
@@ -538,8 +552,8 @@ body[data-view="operator"] #viewOperator { display: block; }
 
 .tp-pop {
   position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 60;
-  min-width: 296px; padding: 14px;
-  border: 1px solid var(--glass-line); border-radius: 8px;
+  min-width: 300px; padding: 16px;
+  border: 1px solid var(--glass-line); border-radius: var(--radius);
   background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.01)), rgba(26,29,38,.97);
   backdrop-filter: blur(16px);
   box-shadow: 0 22px 60px -20px rgba(0,0,0,.95);
@@ -620,3 +634,31 @@ body[data-view="operator"] #viewOperator { display: block; }
 .onair-colour[hidden] { display: none; }
 @media (min-width: 1800px) { .onair-colour { font-size: 18px; } }
 @media (min-width: 2400px) { .onair-colour { font-size: 23px; } }
+
+
+/* ─────────── arc gauges ───────────
+   A number tells you the value; the arc tells you where it sits in its range
+   without reading. Drawn with conic-gradient rather than SVG — one element,
+   no geometry, and it animates by changing a custom property. */
+.ring {
+  --pct: 0;
+  --ring: var(--cyan);
+  position: relative; flex-shrink: 0;
+  width: 42px; height: 42px; border-radius: 50%;
+  background:
+    conic-gradient(var(--ring) calc(var(--pct) * 1%), rgba(255,255,255,.07) 0);
+  transition: --pct .4s ease;
+}
+.ring::after {
+  content: ""; position: absolute; inset: 4px; border-radius: 50%;
+  background: var(--panel-2);
+}
+.ring::before {
+  content: attr(data-glyph); position: absolute; inset: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 13px; color: var(--ring);
+}
+@property --pct { syntax: "<number>"; inherits: false; initial-value: 0; }
+
+@media (min-width: 1800px) { .ring { width: 52px; height: 52px; } .ring::before { font-size: 16px; } }
+@media (min-width: 2400px) { .ring { width: 66px; height: 66px; } .ring::before { font-size: 20px; } .ring::after { inset: 5px; } }

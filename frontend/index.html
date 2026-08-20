@@ -73,24 +73,36 @@
 
       <div class="metrics" id="metrics">
         <button type="button" class="metric" data-explain="quota">
-          <span class="m-k">Model quota</span>
-          <span class="m-v" id="mQuota">—</span>
-          <span class="m-s" id="mQuotaSub">—</span>
+          <span class="ring" id="rQuota"></span>
+          <span class="metric-txt">
+            <span class="m-k">Model quota</span>
+            <span class="m-v" id="mQuota">—</span>
+            <span class="m-s" id="mQuotaSub">—</span>
+          </span>
         </button>
         <button type="button" class="metric" data-explain="director">
-          <span class="m-k">Model latency</span>
-          <span class="m-v" id="mLat">—</span>
-          <span class="m-s">per decision</span>
+          <span class="ring" id="rLat"></span>
+          <span class="metric-txt">
+            <span class="m-k">Model latency</span>
+            <span class="m-v" id="mLat">—</span>
+            <span class="m-s">per decision</span>
+          </span>
         </button>
         <button type="button" class="metric" data-explain="cutguard">
-          <span class="m-k">Decision source</span>
-          <span class="m-v" id="mTier">—</span>
-          <span class="m-s" id="mTierSub">—</span>
+          <span class="ring" id="rTier"></span>
+          <span class="metric-txt">
+            <span class="m-k">Decision source</span>
+            <span class="m-v" id="mTier">—</span>
+            <span class="m-s" id="mTierSub">—</span>
+          </span>
         </button>
         <button type="button" class="metric" data-explain="grafana">
-          <span class="m-k">Series pushed</span>
-          <span class="m-v" id="mPushed">—</span>
-          <span class="m-s">to grafana cloud</span>
+          <span class="ring" id="rPush"></span>
+          <span class="metric-txt">
+            <span class="m-k">Series pushed</span>
+            <span class="m-v" id="mPushed">—</span>
+            <span class="m-s">to grafana cloud</span>
+          </span>
         </button>
       </div>
 
