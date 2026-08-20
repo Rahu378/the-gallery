@@ -11,8 +11,22 @@ ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
+        build-essential curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Grafana's MCP server. The agent talks to it over stdio, so it ships inside
+# the image rather than being reached over the network — Grafana Cloud does
+# not host an MCP endpoint on this stack.
+ARG MCP_GRAFANA_VERSION=v1.1.0
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in amd64) A=x86_64 ;; arm64) A=arm64 ;; *) A=x86_64 ;; esac; \
+    curl -sL -o /tmp/mcpg.tgz \
+      "https://github.com/grafana/mcp-grafana/releases/download/${MCP_GRAFANA_VERSION}/mcp-grafana_Linux_${A}.tar.gz"; \
+    tar -xzf /tmp/mcpg.tgz -C /tmp; \
+    install -m 0755 /tmp/mcp-grafana /usr/local/bin/mcp-grafana; \
+    rm -rf /tmp/mcpg.tgz /tmp/mcp-grafana; \
+    /usr/local/bin/mcp-grafana --help >/dev/null 2>&1 || true
 
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
@@ -42,6 +56,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1
 
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /usr/local/bin/mcp-grafana /usr/local/bin/mcp-grafana
 
 WORKDIR /app
 COPY --from=builder /build/cache /app/cache

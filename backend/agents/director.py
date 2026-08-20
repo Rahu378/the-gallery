@@ -48,10 +48,14 @@ recompute it. Your judgement is for what the number cannot capture:
 
 - A fight for the lead outranks a marginally closer fight for P14.
 - A move that is actually about to happen beats one that is merely close.
-- Coverage should be spread. Call `recent_airtime` before deciding, and favour
-  a story that has not been shown if the scores are comparable.
+- Coverage should be spread. Recent airtime is given below; favour a story
+  that has not been shown if the scores are comparable. Only call
+  `recent_airtime` if you need more history than is shown.
 - Cutting away from a developing move to something slightly better is bad
   television. When in doubt, stay.
+- Grafana tools are available if you need them: `get_annotations` returns the
+  cuts already made, `query_prometheus` the tension scores behind them. Use
+  them only when the summary below is not enough — they cost a round trip.
 
 Reply with JSON only, no prose and no code fence:
 {"cut_to": "<car number of the DEFENDING car>", "shot": "ONBOARD" | "TRACKSIDE" | "HELICOPTER", "line": "<one broadcast sentence, max 14 words>", "confidence": 0.0-1.0}
@@ -123,6 +127,8 @@ class DirectorAgent:
         self._runner = None
         self._genai = None
         self._session_ready = False
+        self._mcp = None
+        self.mcp_ready = False
         self.blocked_until = 0.0     # monotonic; set by a 429
         self.block_reason = ""
 
@@ -151,11 +157,23 @@ class DirectorAgent:
                     self._airtime.items(), key=lambda kv: -kv[1])[:10]}
 
             cfg = _fast_config()
+            tools = [recent_airtime]
+
+            # Grafana's own MCP server, exposed to the agent as tools. The rest
+            # of this project pushes to Grafana; this is the direction back —
+            # the director can read the annotations its own cuts produced and
+            # query the tension metrics it emitted. Filtered to read-only.
+            from .grafana_mcp import build_toolset
+            self._mcp = build_toolset()
+            if self._mcp is not None:
+                tools.append(self._mcp)
+                self.mcp_ready = True
+
             self._agent = LlmAgent(
                 name="world_feed_director",
                 model=self.model,
                 instruction=INSTRUCTION,
-                tools=[recent_airtime],
+                tools=tools,
                 **({"generate_content_config": cfg} if cfg else {}),
             )
             self._sessions = InMemorySessionService()
@@ -187,8 +205,8 @@ class DirectorAgent:
     def note_airtime(self, driver_num: str, seconds: float) -> None:
         self._airtime[driver_num] = self._airtime.get(driver_num, 0.0) + seconds
 
-    @staticmethod
-    def _prompt(candidates: list[Battle], lap: int, total: int, on_air: str | None) -> str:
+    def _prompt(self, candidates: list[Battle], lap: int, total: int,
+                on_air: str | None) -> str:
         lines = [f"Lap {lap} of {total}. Currently on air: car {on_air or 'none'}.", "",
                  "Candidate battles, highest score first:"]
         for i, b in enumerate(candidates[:5], 1):
@@ -196,6 +214,16 @@ class DirectorAgent:
                 f"{i}. P{b.position}: car {b.ahead_num} ({b.ahead}) defending from "
                 f"car {b.behind_num} ({b.behind}) — score {b.score:.2f}, {b.why}"
             )
+        # Airtime inlined rather than left to the tool. Function calling costs
+        # a full extra round trip — measured at 2.15 model requests per
+        # decision — and this is a handful of numbers the model needs every
+        # time. The tool stays registered for the cases where it wants deeper
+        # history, but the common path no longer pays for it.
+        top = sorted(self._airtime.items(), key=lambda kv: -kv[1])[:6]
+        if top:
+            lines.append("")
+            lines.append("Airtime so far (seconds): " +
+                         ", ".join(f"car {k} {v:.0f}" for k, v in top))
         lines.append("")
         lines.append("Which do we cut to?")
         return "\n".join(lines)

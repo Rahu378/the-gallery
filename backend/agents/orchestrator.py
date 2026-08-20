@@ -85,6 +85,7 @@ class Orchestrator:
         self.race_id = None
         self._restart = False
         self.circuit_rev = 0
+        self.audit_count = 0
 
     # ------------------------------------------------------------------ log
     def _emit(self, kind: str, text: str, tier: str = "") -> None:
@@ -210,6 +211,7 @@ class Orchestrator:
 
         asyncio.create_task(self._provision_grafana())
         asyncio.create_task(self.director.warmup())
+        asyncio.create_task(self._audit_loop())
         asyncio.create_task(self._push_loop())
 
         while self._running:
@@ -377,6 +379,27 @@ class Orchestrator:
             if batch:
                 await self.writer.push(batch)
 
+    async def _audit_loop(self) -> None:
+        """Read back through MCP what this director actually put on air.
+
+        Runs on its own timer rather than inside a decision, so the partner
+        integration is exercised at runtime regardless of whether the model
+        elects to call a tool, and without adding latency to a cut.
+        """
+        from .grafana_mcp import available, broadcast_audit
+        if not available():
+            self._emit("system", "grafana mcp: server not available")
+            return
+        self._emit("system", "grafana mcp: broadcast audit every 120s")
+        while self._running:
+            await asyncio.sleep(120)
+            res = await broadcast_audit()
+            if res.get("ok"):
+                self.audit_count += 1
+                self._emit("system", f"grafana mcp: read back {self.audit_count} audits")
+            else:
+                log.debug("audit: %s", res.get("reason"))
+
     # ---------------------------------------------------------------- grafana
     async def _provision_grafana(self) -> None:
         ok = await grafana.health()
@@ -402,6 +425,7 @@ class Orchestrator:
                          "model": settings.director_model,
                          "blocked": self.director.block_reason,
                          "configured": settings.gemini_ready,
+                         "mcp": self.director.mcp_ready,
                          },
             "grafana": {"live": s.grafana_live, "url": grafana.dashboard_url,
                         "enabled": grafana.enabled,
