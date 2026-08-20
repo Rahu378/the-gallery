@@ -68,6 +68,29 @@ it falls back to a deterministic synthetic race and says so in the header.
 | `RACE_YEAR` / `RACE_EVENT` | `2023` / `Italian Grand Prix` | Use full event names — "Spa" fuzzy-matches to the *Spanish* Grand Prix |
 | `REPLAY_SPEED` | `8.0` | Race seconds per wall second |
 
+## Spoken commentary
+
+The director already writes a broadcast sentence for every cut. The audio
+button on the on-air card speaks it, through Gemini text-to-speech on Vertex.
+
+Off by default and generated on demand. TTS is another model call and quota is
+the tightest constraint here, so nothing is synthesised until a client asks;
+lines are cached, since the same sentence never needs paying for twice. Vertex
+returns raw 16-bit PCM at 24 kHz, which browsers will not play, so it is
+wrapped in a WAV header server-side rather than shipping a decoder.
+
+## Passed over
+
+Beside every cut, the panel shows the battles the director declined and what
+they scored. The live contested list keeps moving, so this is frozen at the
+moment of the decision — otherwise there is no way to see the choice that was
+actually made.
+
+This is deliberately not a multi-view. The premise is that one camera goes out
+and something has to choose; showing four battles at once dissolves the problem
+the project exists to solve. Showing the rejected options keeps the single feed
+and makes the reasoning legible instead.
+
 ## Two views
 
 The map has a **2D** and a **3D** toggle, bottom right. 2D is the default and

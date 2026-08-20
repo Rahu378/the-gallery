@@ -588,3 +588,27 @@ body[data-view="operator"] #viewOperator { display: block; }
 }
 @media (min-width: 1800px) { .vt { font-size: 12.5px; padding: 8px 15px; } .vt-note { font-size: 12px; } }
 @media (min-width: 2400px) { .vt { font-size: 15px; padding: 10px 19px; } .vt-note { font-size: 14px; } }
+
+
+/* ─────────── spoken commentary ─────────── */
+.oa-audio {
+  margin-left: auto; padding: 4px 10px; border-radius: 4px;
+  border: 1px solid var(--glass-line); background: rgba(255,255,255,.04);
+  color: var(--ink-3); font-family: var(--mono); font-size: 10px;
+  letter-spacing: .14em; text-transform: uppercase; transition: all .16s;
+}
+.oa-audio:hover { color: var(--ink); border-color: rgba(0,229,255,.4); }
+.oa-audio[aria-pressed="true"] { color: var(--cyan); border-color: rgba(0,229,255,.55); background: rgba(0,229,255,.12); }
+.oa-audio.speaking { color: var(--orange); border-color: rgba(255,87,34,.6); background: rgba(255,87,34,.14); }
+.onair-tier { margin-left: 12px; }
+
+/* ─────────── passed over ─────────── */
+.po { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+.po:last-child { border-bottom: 0; }
+.po .pos { color: var(--ink-3); }
+.po .vs { color: var(--ink-2); }
+.po .sc { margin-left: auto; font-variant-numeric: tabular-nums; }
+.po-note { font-family: var(--mono); font-size: 10px; color: var(--ink-3); margin-top: 6px; opacity: .8; }
+
+@media (min-width: 1800px) { .oa-audio { font-size: 12px; padding: 6px 13px; } .po { font-size: 13px; } }
+@media (min-width: 2400px) { .oa-audio { font-size: 14px; padding: 8px 16px; } .po { font-size: 15.5px; } }

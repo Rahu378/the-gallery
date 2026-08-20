@@ -16,6 +16,7 @@ import logging
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -154,6 +155,18 @@ async def switch_race(race_id: str) -> dict:
         return {"ok": False, "error": "starting"}
     ok = await orch.switch_race(race_id)
     return {"ok": ok, "circuit": orch.source.meta.name}
+
+
+@app.get("/api/commentary")
+async def commentary_audio(line: str = ""):
+    """Speak a commentary line. Only ever called when a client enables audio."""
+    from .agents.commentary import commentary
+    wav = await commentary.speak(line)
+    if not wav:
+        return PlainTextResponse(
+            commentary.last_error or "no audio", status_code=503)
+    return Response(content=wav, media_type="audio/wav",
+                    headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.websocket("/ws")

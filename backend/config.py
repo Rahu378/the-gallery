@@ -28,7 +28,12 @@ class Settings:
     use_vertex: bool = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "0") == "1"
     gcp_project: str = os.getenv("GOOGLE_CLOUD_PROJECT", "")
     gcp_location: str = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-    director_model: str = os.getenv("DIRECTOR_MODEL", "gemini-flash-lite-latest")
+    # gemini-2.5-flash, not a -latest alias: those resolve on AI Studio but do
+    # not exist on Vertex, so the default has to be a concrete Vertex model or
+    # a fresh clone 404s on its first decision.
+    director_model: str = os.getenv("DIRECTOR_MODEL", "gemini-2.5-flash")
+    # Spoken commentary. Only called when a client turns audio on.
+    tts_model: str = os.getenv("TTS_MODEL", "gemini-2.5-flash-tts")
 
     # Grafana
     grafana_url: str = os.getenv("GRAFANA_URL", "http://localhost:3000").rstrip("/")

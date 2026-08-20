@@ -50,6 +50,8 @@
           <div class="onair-hd">
             <span class="rec"><i></i>ON AIR</span>
             <span class="onair-shot" id="oaShot">STANDBY</span>
+            <button type="button" class="oa-audio" id="oaAudio" aria-pressed="false"
+                    title="Speak the director's commentary">🔇 Audio</button>
             <span class="onair-tier" id="oaTier">—</span>
           </div>
           <div class="onair-body">
@@ -178,6 +180,11 @@
 
     <!-- ── right rail ─────────────────────────────── -->
     <section class="col right">
+      <div class="block" id="passedBlock" hidden>
+        <div class="block-lab"><span>Passed over</span><span class="hint">at the cut</span></div>
+        <div id="passed"></div>
+      </div>
+
       <div class="block">
         <div class="block-lab">
           <span>Contested positions</span>

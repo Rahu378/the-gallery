@@ -114,7 +114,7 @@
          faults.length ? faults.join(" · ") : "all systems nominal",
          faults.length ? "warn" : "on");
 
-    paintTower(s); paintOnAir(s); paintBattles(s); paintMetrics(s); paintViews(s); paintFocus(s); paintTransport(s); refreshCircuit(s);
+    paintTower(s); paintOnAir(s); paintBattles(s); paintMetrics(s); paintViews(s); paintFocus(s); paintTransport(s); paintPassed(s); refreshCircuit(s);
     if (view3d && mapMode === "3d") view3d.setState(s, selected);
     if (!logFrozen) paintLog(s);
   }
@@ -202,6 +202,7 @@
     if (key !== lastCutKey) {
       lastCutKey = key;
       if (!reduced) { el.flash.classList.remove("go"); void el.flash.offsetWidth; el.flash.classList.add("go"); }
+      speak(a.line);
     }
     var model = isModelTier(a.tier);
     el.onair.classList.toggle("hot", !!a.hot && model);
@@ -282,6 +283,51 @@
     logFrozen = false; el.logHint.textContent = "live"; el.logHint.classList.remove("frozen");
     if (latest) paintLog(latest);
   });
+
+  /* ───────── spoken commentary ───────── */
+  var audioOn = false, audioEl = null, spokenKey = "";
+
+  $("oaAudio").addEventListener("click", function () {
+    audioOn = !audioOn;
+    var b = $("oaAudio");
+    b.setAttribute("aria-pressed", audioOn ? "true" : "false");
+    b.textContent = audioOn ? "🔊 Audio" : "🔇 Audio";
+    if (!audioOn && audioEl) { audioEl.pause(); audioEl = null; }
+    // Clicking is the gesture browsers require before audio may play, so the
+    // current line is spoken immediately rather than waiting for the next cut.
+    if (audioOn && latest && latest.on_air) speak(latest.on_air.line);
+  });
+
+  function speak(line) {
+    if (!audioOn || !line) return;
+    var key = line;
+    if (key === spokenKey) return;
+    spokenKey = key;
+    var b = $("oaAudio");
+    b.classList.add("speaking");
+    if (audioEl) audioEl.pause();
+    audioEl = new Audio("/api/commentary?line=" + encodeURIComponent(line));
+    audioEl.addEventListener("ended", function () { b.classList.remove("speaking"); });
+    audioEl.addEventListener("error", function () {
+      b.classList.remove("speaking");
+      b.textContent = "🔇 unavailable";
+    });
+    audioEl.play().catch(function () { b.classList.remove("speaking"); });
+  }
+
+  /* ───────── passed over ───────── */
+  function paintPassed(s) {
+    var list = s.passed_over || [];
+    var block = $("passedBlock");
+    if (!list.length || !s.on_air) { block.hidden = true; return; }
+    block.hidden = false;
+    $("passed").innerHTML = list.map(function (b) {
+      return '<div class="po"><span class="pos">P' + b.position + "</span>"
+        + '<span class="vs">' + esc(b.ahead) + " ◂ " + esc(b.behind) + "</span>"
+        + '<span class="sc">' + b.score.toFixed(2) + "</span></div>";
+    }).join("") + '<div class="po-note">scored below ' +
+      (s.on_air.score || 0).toFixed(2) + " when the cut was taken</div>";
+  }
 
   /* ───────── 2D / 3D ───────── */
   var mapMode = "2d", view3d = null, glHost = $("glHost");

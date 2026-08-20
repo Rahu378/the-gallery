@@ -48,6 +48,7 @@ class State:
     cars: list = field(default_factory=list)
     battles: list = field(default_factory=list)
     on_air: dict | None = None
+    passed_over: list = field(default_factory=list)
     top_score: float = 0.0
     log: list = field(default_factory=list)
     director_tier: str = "heuristic"
@@ -340,6 +341,15 @@ class Orchestrator:
         self._cut_count += 1
         metrics.gauge("gallery_director_latency_ms", decision.latency_ms)
 
+        # What it decided against, frozen at the moment of the cut. The live
+        # contested list keeps moving, so without this snapshot there is no way
+        # to see the choice that was actually made.
+        self.state.passed_over = [
+            {"position": b.position, "ahead": b.ahead, "behind": b.behind,
+             "score": round(b.score, 3), "gap": b.gap, "why": b.why}
+            for b in battles[:4] if b.ahead_num != chosen.ahead_num
+        ][:3]
+
         self.state.on_air = {
             "num": chosen.ahead_num, "code": chosen.ahead,
             "against": chosen.behind, "against_num": chosen.behind_num,
@@ -420,7 +430,8 @@ class Orchestrator:
             "lap": s.lap, "total_laps": s.total_laps, "race_t": round(s.race_t, 1),
             "circuit": s.circuit, "source": s.source,
             "cars": s.cars, "battles": s.battles,
-            "on_air": s.on_air, "top_score": round(s.top_score, 3),
+            "on_air": s.on_air, "passed_over": s.passed_over,
+            "top_score": round(s.top_score, 3),
             "director": {"tier": s.director_tier, "latency_ms": s.director_latency,
                          "model": settings.director_model,
                          "blocked": self.director.block_reason,
