@@ -286,6 +286,22 @@ physically catchable, this captures roughly half — with no knowledge of the
 future. Following the leader, which is what an inattentive broadcast does,
 catches almost nothing.
 
+### What this does not measure
+
+The model's *selection* quality. `--agent` runs the real director, but Vertex
+serves Gemini from dynamic shared quota and an offline replay asks for
+decisions far faster than a live race does, so most calls come back 429 and
+fall through to the deterministic tier — a 15-lap run landed 3 real model
+calls out of 14 cuts. The resulting number is mostly the fallback wearing the
+agent's name, and it is not reported as evidence of anything. Doing this
+properly needs provisioned throughput.
+
+There is also a real tension worth naming: the director sometimes takes the
+better *story* over the closest *gap*, which would trade capture rate for
+narrative. Whether that trade is correct has no ground truth — "was that the
+better story?" is not scoreable — so it is left as an open question rather
+than dressed up as a result.
+
 The policies compared are the deterministic ones, because they decide *where
 the camera is*. The Gemini director chooses which of the candidate battles is
 the better story; the candidate set comes from the tension scorer and the cut
@@ -295,24 +311,34 @@ model calls.
 The same figure is computed live and shown on the metric strip, so it can be
 watched rather than taken on trust.
 
+## On a phone
+
+The layout collapses to a single column below 820px, and drops the map, the
+metric strip and the passed-over panel rather than crushing them. On a phone
+this is a viewer's surface, not an operator's: the shot on air, both
+commentary voices, the field, and what the agent decided. A 3D circuit on a
+390px screen is decoration and the metric rings are unreadable at that size,
+so the canvas and Three.js are not booted at all there.
+
 ## Scaling
 
-One instance, concurrency 60. That is a deliberate ceiling, not an oversight.
+One instance, concurrency 250. That is a deliberate ceiling, not an oversight.
 
-The race engine is a per-process global: one orchestrator, one replay, one
-director, fanned out over WebSockets. A second Cloud Run instance would start
+All viewers share one race, so WebSocket fanout is cheap and concurrency is
+raised accordingly. The instance count is what cannot go up: the race engine is
+a per-process global — one orchestrator, one replay, one director. A second Cloud Run instance would start
 its own independent race, so two viewers could land on different instances and
 see different laps, different cuts, and a circuit switch that only took effect
 for one of them. `--max-instances 1` removes that failure mode. Every viewer
 sees the same race because there is only one race.
 
-Beyond ~60 concurrent viewers this needs the engine split from the web tier —
+Beyond ~250 concurrent viewers this needs the engine split from the web tier —
 a single producer publishing frames to Redis or Pub/Sub, with stateless web
 instances subscribing. That is the correct architecture and it is not built
 here; the honest position is a hard ceiling rather than silent divergence.
 
 Model cost also scales with instances rather than viewers, since the director
-runs per process. One instance serving sixty people costs the same as one
+runs per process. One instance serving 250 people costs the same as one
 instance serving one.
 
 ## Known gaps

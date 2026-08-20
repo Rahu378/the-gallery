@@ -406,7 +406,10 @@
     });
   }
 
+  var isPhone = matchMedia("(max-width: 820px)").matches;
+
   function setMapMode(mode) {
+    if (isPhone) return;
     mapMode = mode;
     [].forEach.call(document.querySelectorAll("[data-map]"), function (b) {
       b.classList.toggle("on", b.getAttribute("data-map") === mode);
@@ -849,6 +852,7 @@
 
   function draw() {
     requestAnimationFrame(draw);
+    if (isPhone) return;   // stage is hidden; nothing to paint
     ctx.clearRect(0, 0, W, H);
     if (!outline.length) return;
     var s = latest, cars = interpolated();

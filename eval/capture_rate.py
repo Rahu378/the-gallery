@@ -16,6 +16,7 @@ Usage:  .venv/bin/python -m eval.capture_rate [--race monza] [--policies ...]
 from __future__ import annotations
 
 import argparse
+import asyncio
 import random
 from dataclasses import dataclass
 
@@ -36,7 +37,8 @@ class Result:
         return self.captured / self.overtakes if self.overtakes else 0.0
 
 
-def collect_overtakes(race: str, speed: float = 40.0, tick_hz: float = 10.0) -> list[tuple]:
+def collect_overtakes(race: str, speed: float = 40.0, tick_hz: float = 10.0,
+                      laps: int = 0) -> list[tuple]:
     """Every position change in the race, as (tick, carA, carB).
 
     Used to compute the ceiling: with one camera and a minimum hold, some
@@ -48,6 +50,8 @@ def collect_overtakes(race: str, speed: float = 40.0, tick_hz: float = 10.0) -> 
     dt = 1.0 / tick_hz
     out, last = [], {}
     for i, frame in enumerate(src.frames(dt * speed)):
+        if laps and frame.lap > laps:
+            break
         now = {c.num: c.pos for c in frame.cars}
         for num, pos in now.items():
             was = last.get(num)
@@ -80,7 +84,8 @@ def oracle_ceiling(events: list[tuple], min_hold: float = 4.0) -> tuple[int, int
     return caught, len(events)
 
 
-def run(race: str, policy: str, speed: float = 40.0, tick_hz: float = 10.0) -> Result:
+def run(race: str, policy: str, speed: float = 40.0, tick_hz: float = 10.0,
+        laps: int = 0) -> Result:
     src = build_source(race)
     scorer = TensionScorer()
     guard = CutGuard(min_hold=4.0, max_hold=25.0)
@@ -93,6 +98,8 @@ def run(race: str, policy: str, speed: float = 40.0, tick_hz: float = 10.0) -> R
     on_air: str | None = None
 
     for frame in src.frames(race_dt):
+        if laps and frame.lap > laps:
+            break
         battles = scorer.score_frame(frame)
 
         # --- did a position change hands, and were we watching it? ---
@@ -136,26 +143,106 @@ def run(race: str, policy: str, speed: float = 40.0, tick_hz: float = 10.0) -> R
     return Result(policy, overtakes, captured, cuts)
 
 
+async def run_agent(race: str, speed: float = 40.0, tick_hz: float = 10.0,
+                    cooldown_race_s: float = 30.0, laps: int = 0) -> Result:
+    """The same replay, but Gemini picks which candidate goes on air.
+
+    This is the one comparison that gives the model's judgment a ground truth.
+    Everything else here measures the deterministic pipeline; this asks whether
+    choosing the better *story* also catches more of the racing, or whether the
+    two goals pull apart. Either answer is worth knowing — and an honest
+    result matters more than a flattering one.
+    """
+    from backend.agents.director import DirectorAgent
+
+    src = build_source(race)
+    scorer = TensionScorer()
+    guard = CutGuard(min_hold=4.0, max_hold=25.0)
+    director = DirectorAgent()
+    await director.warmup()
+
+    dt = 1.0 / tick_hz
+    last_pos: dict[str, int] = {}
+    overtakes = captured = cuts = 0
+    on_air: str | None = None
+    last_call = 0.0
+    model_calls = 0
+
+    for frame in src.frames(dt * speed):
+        if laps and frame.lap > laps:
+            break
+        battles = scorer.score_frame(frame)
+
+        now = {c.num: c.pos for c in frame.cars}
+        for num, pos in now.items():
+            was = last_pos.get(num)
+            if was is None or pos >= was:
+                continue
+            lost = [n for n, p in now.items() if last_pos.get(n) == pos and p == was]
+            if not lost:
+                continue
+            overtakes += 1
+            if on_air in (num, lost[0]):
+                captured += 1
+        last_pos = now
+
+        cand = next((b for b in battles if b.score >= 0.55), None)
+        live = next((b for b in battles if b.ahead_num == guard.current), None)
+        guard.current_score = live.score if live else 0.0
+        verdict = guard.evaluate(frame.t, cand, guard.current_score)
+        if not (verdict.allowed and cand):
+            continue
+        if frame.t - last_call < cooldown_race_s:
+            continue
+        last_call = frame.t
+
+        d = await director.decide(battles, frame.lap, frame.total_laps, guard.current)
+        if d.tier in ("adk", "genai"):
+            model_calls += 1
+        chosen = next((b for b in battles if b.ahead_num == d.cut_to), cand)
+        if chosen.ahead_num != on_air:
+            on_air = chosen.ahead_num
+            guard.commit(on_air, frame.t, chosen.score)
+            cuts += 1
+        if on_air:
+            director.note_airtime(on_air, dt * speed)
+
+    r = Result("agent", overtakes, captured, cuts)
+    r.model_calls = model_calls  # type: ignore[attr-defined]
+    return r
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--race", default="monza")
     ap.add_argument("--policies", nargs="+",
                     default=["tension", "leader", "random"])
+    ap.add_argument("--laps", type=int, default=0,
+                    help="limit to the first N laps (keeps agent runs affordable)")
+    ap.add_argument("--agent", action="store_true",
+                    help="also run the Gemini director (costs model calls)")
     args = ap.parse_args()
 
-    events = collect_overtakes(args.race)
+    events = collect_overtakes(args.race, laps=args.laps)
     ceil_n, total = oracle_ceiling(events)
     ceiling = ceil_n / total if total else 0.0
 
-    print(f"\n  {args.race} — full race, one pass per policy")
+    window = f"first {args.laps} laps" if args.laps else "full race"
+    print(f"\n  {args.race} — {window}, one pass per policy")
     print(f"  {total} position changes · one camera · 4s minimum hold\n")
     print(f"  {'policy':10s} {'captured':>9s} {'rate':>7s} {'of ceiling':>11s} {'cuts':>6s}")
     print("  " + "-" * 50)
     for pol in args.policies:
-        r = run(args.race, pol)
+        r = run(args.race, pol, laps=args.laps)
         share = r.rate / ceiling if ceiling else 0.0
         print(f"  {r.policy:10s} {r.captured:>9d} {r.rate*100:>6.1f}% "
               f"{share*100:>10.1f}% {r.cuts:>6d}")
+    if args.agent:
+        r = asyncio.run(run_agent(args.race, laps=args.laps))
+        share = r.rate / ceiling if ceiling else 0.0
+        calls = getattr(r, "model_calls", 0)
+        print(f"  {'agent':10s} {r.captured:>9d} {r.rate*100:>6.1f}% "
+              f"{share*100:>10.1f}% {r.cuts:>6d}   ({calls} model calls)")
     print(f"  {'oracle':10s} {ceil_n:>9d} {ceiling*100:>6.1f}% {100.0:>10.1f}%       —")
     print("\n  oracle knows every pass in advance; no live director can reach it.\n")
 

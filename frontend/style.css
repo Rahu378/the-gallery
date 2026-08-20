@@ -662,3 +662,50 @@ body[data-view="operator"] #viewOperator { display: block; }
 
 @media (min-width: 1800px) { .ring { width: 52px; height: 52px; } .ring::before { font-size: 16px; } }
 @media (min-width: 2400px) { .ring { width: 66px; height: 66px; } .ring::before { font-size: 20px; } .ring::after { inset: 5px; } }
+
+/* ─────────── phones ───────────
+   Not a shrunken control room. On a phone this is a viewer's surface, not an
+   operator's: the shot on air, the field, and what the agent decided. The map,
+   the metric strip and the passed-over panel are dropped rather than crushed —
+   a 3D circuit on a 390px screen is decoration, and the metric rings are
+   unreadable at that size. Everything removed is still one tap away on a
+   larger screen. */
+@media (max-width: 820px) {
+  html, body { overflow-y: auto; }
+  .shell { height: auto; min-height: 100vh; grid-template-rows: auto 1fr auto; }
+
+  .top { gap: 10px; padding: 10px 12px; font-size: 11px; justify-content: flex-start; flex-wrap: wrap; overflow: visible; }
+  .top .sep, .tabs { display: none; }
+  .hd-right { margin-left: auto; }
+  .brand { letter-spacing: .18em; }
+
+  .grid { grid-template-columns: 1fr; grid-template-rows: auto auto auto; }
+  .col.centre { order: -1; }
+
+  /* the map, metric strip and view panes are operator tools */
+  .stage, .metrics, .viewpane, #passedBlock { display: none !important; }
+
+  .onair-wrap { padding: 10px 10px 0; }
+  .onair-body { gap: 12px; padding: 12px; }
+  .onair-num { font-size: 30px; min-width: 66px; padding: 8px 10px; }
+  .onair-line { font-size: 17px; }
+  .onair-colour { font-size: 14px; }
+  .onair-ft { gap: 14px; padding: 10px 12px; font-size: 10.5px; flex-wrap: wrap; }
+
+  .tower { max-height: 46vh; }
+  .row { grid-template-columns: 20px 3px 38px 1fr 56px 24px; font-size: 13px; }
+
+  .right { max-height: none; }
+  .block.grow { min-height: 240px; }
+  .log { max-height: 260px; }
+
+  .foot { gap: 10px; padding: 8px 12px; font-size: 10px; }
+  .pipe, .ft-right span:not(:last-child) { display: none; }
+}
+
+@media (max-width: 560px) {
+  .onair-line { font-size: 15.5px; }
+  .onair-num { font-size: 26px; min-width: 58px; }
+  .row .tyre { display: none; }
+  .row { grid-template-columns: 18px 3px 36px 1fr 24px; }
+}
