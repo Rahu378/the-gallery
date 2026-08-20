@@ -709,3 +709,48 @@ body[data-view="operator"] #viewOperator { display: block; }
   .row .tyre { display: none; }
   .row { grid-template-columns: 18px 3px 36px 1fr 24px; }
 }
+
+
+/* ─────────── broadcast view ───────────
+   What the audience gets, with the machinery taken away. The operator surface
+   is dense on purpose — it is for someone running the feed — but a studio head
+   asking "what does this actually put out?" should not have to read a timing
+   tower to find out. Same agent, same decisions, one output. */
+body[data-view="broadcast"] .grid { grid-template-columns: 1fr; }
+body[data-view="broadcast"] .col:not(.centre),
+body[data-view="broadcast"] .metrics,
+body[data-view="broadcast"] .viewpane,
+body[data-view="broadcast"] .stage-tag,
+body[data-view="broadcast"] .legend { display: none; }
+
+body[data-view="broadcast"] .onair-wrap {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 4;
+  padding: 0; pointer-events: none;
+}
+body[data-view="broadcast"] .onair {
+  border: 0; border-radius: 0; backdrop-filter: blur(18px);
+  background: linear-gradient(0deg, rgba(15,17,23,.97) 55%, rgba(15,17,23,0));
+  box-shadow: none;
+}
+body[data-view="broadcast"] .onair-hd { background: transparent; border-bottom: 0; padding: 14px 34px 0; }
+body[data-view="broadcast"] .onair-body { padding: 10px 34px 6px; gap: 22px; }
+body[data-view="broadcast"] .onair-ft { display: none; }
+body[data-view="broadcast"] .onair-num { font-size: clamp(44px, 5vw, 78px); min-width: clamp(96px, 10vw, 168px); }
+body[data-view="broadcast"] .onair-line { font-size: clamp(24px, 2.6vw, 44px); line-height: 1.24; }
+body[data-view="broadcast"] .onair-colour { font-size: clamp(16px, 1.5vw, 26px); }
+body[data-view="broadcast"] .onair-vs { font-size: clamp(12px, 1vw, 16px); }
+body[data-view="broadcast"] .oa-audio { pointer-events: auto; }
+
+body[data-view="broadcast"] .stage { margin-top: 0; border-top: 0; }
+body[data-view="broadcast"] .viewtoggle { bottom: auto; top: 18px; right: 22px; }
+body[data-view="broadcast"] .focus { display: none; }
+body[data-view="broadcast"] .foot { display: none; }
+body[data-view="broadcast"] .top { border-bottom-color: transparent; }
+
+/* the caption band is the whole point here, so it must not sit under a phone's
+   collapsed layout rules that hide the stage */
+@media (max-width: 820px) {
+  body[data-view="broadcast"] .stage { display: block !important; height: 46vh; }
+  body[data-view="broadcast"] .onair-body { padding: 10px 16px 6px; gap: 12px; }
+  body[data-view="broadcast"] .onair-hd { padding: 12px 16px 0; }
+}

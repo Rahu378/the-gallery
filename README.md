@@ -114,6 +114,18 @@ and something has to choose; showing four battles at once dissolves the problem
 the project exists to solve. Showing the rejected options keeps the single feed
 and makes the reasoning legible instead.
 
+## Two audiences
+
+**Broadcast** is what the feed puts out: the picture, the shot on air, and
+both commentary voices. Everything else is gone.
+
+**Control** is the operator surface — timing tower, contested positions,
+passed-over, agent decisions, the metric strip. Dense on purpose, because it
+is for someone running the feed rather than watching it.
+
+Same agent, same decisions, two ways in. A studio head asking "what does this
+actually put out?" should not have to read a timing tower to find out.
+
 ## Two views
 
 The map has a **2D** and a **3D** toggle, bottom right. 2D is the default and
@@ -321,6 +333,17 @@ commentary voices, the field, and what the agent decided. A 3D circuit on a
 so the canvas and Three.js are not booted at all there.
 
 ## Cost
+
+Measured from billing rather than a price list: **$22.71** of Vertex spend
+across a day running one decision every ten seconds — 8,640 decisions — is
+**$0.0026 a decision**. A Grand Prix at real time is roughly 433 decisions, so
+the agent directs **a full race for about $1.14** in model calls. Speech adds a
+few cents, and only when a viewer turns audio on.
+
+What that displaces is deliberately not quantified. A broadcast gallery is a
+room of people, and this project has no data on what one costs — so no saving
+is claimed, only what this side of the comparison actually costs to run. The
+figure is live in the Monitors tab and recomputed from real decision counts.
 
 The director only runs while somebody is connected. An empty gallery does not
 need one: the replay keeps going on the deterministic tier, which costs

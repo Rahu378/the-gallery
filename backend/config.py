@@ -34,6 +34,10 @@ class Settings:
     director_model: str = os.getenv("DIRECTOR_MODEL", "gemini-2.5-flash")
     # Spoken commentary. Only called when a client turns audio on.
     tts_model: str = os.getenv("TTS_MODEL", "gemini-2.5-flash-tts")
+    # Observed cost per director decision, derived from actual billing rather
+    # than a published price: $22.71 of Vertex spend over a day of running at
+    # one decision per 10s = 8,640 decisions. Override if your rate differs.
+    cost_per_decision: float = _f("COST_PER_DECISION", 22.71 / 8640)
 
     # Grafana
     grafana_url: str = os.getenv("GRAFANA_URL", "http://localhost:3000").rstrip("/")

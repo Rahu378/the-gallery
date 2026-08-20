@@ -409,7 +409,7 @@
   var isPhone = matchMedia("(max-width: 820px)").matches;
 
   function setMapMode(mode) {
-    if (isPhone) return;
+    if (isPhone && document.body.getAttribute("data-view") !== "broadcast") return;
     mapMode = mode;
     [].forEach.call(document.querySelectorAll("[data-map]"), function (b) {
       b.classList.toggle("on", b.getAttribute("data-map") === mode);
@@ -586,7 +586,11 @@
     if (!b) return;
     [].forEach.call(document.querySelectorAll(".tab"), function (x) { x.classList.remove("on"); });
     b.classList.add("on");
-    document.body.setAttribute("data-view", b.getAttribute("data-view"));
+    var v = b.getAttribute("data-view");
+    document.body.setAttribute("data-view", v);
+    // Broadcast keeps the map — it is the picture. Operator and Monitors
+    // replace it with their own panes.
+    if (v === "broadcast" && view3d && mapMode === "3d") view3d.resize(glHost);
     if (latest) paintViews(latest);
   });
   document.body.setAttribute("data-view", "control");
@@ -606,6 +610,10 @@
         ["pairings scored", (s.pairings_scored || 0).toLocaleString()],
         ["director tier", s.director.tier],
         ["director latency", s.director.latency_ms + " ms"],
+        ["model decisions", (s.director.decisions || 0).toLocaleString()],
+        ["cost this session", "$" + (s.director.cost || 0).toFixed(3)],
+        ["cost per decision", "$" + (0.00263).toFixed(5)],
+        ["cost per full GP", "~$1.14 at 1x, 433 decisions"],
         ["race source", s.source],
         ["lap", s.lap + " / " + s.total_laps]
       ].map(function (r) { return "<dt>" + r[0] + "</dt><dd>" + esc(r[1]) + "</dd>"; }).join("");
@@ -670,6 +678,8 @@
       body: "<p>The single shot going out. One camera, one global audience — a pass that happens off screen is lost.</p><p>The card shows which car is live, who they are defending from, the gap, the score that won the cut, and the commentary line the director wrote for it.</p>" },
     fastf1: { eyebrow: "Data source", title: "FastF1",
       body: "<p>Open library for Formula 1 timing and telemetry. Supplies position samples, lap and sector times, tyre compound and age, and the circuit geometry used for the corner markers.</p><p>DRS zones are not published anywhere, so they are recovered from the DRS channel in car telemetry and mapped back onto the track.</p>" },
+    cost: { eyebrow: "Economics", title: "What a race costs",
+      body: "<p>Measured from billing, not a price list: $22.71 of Vertex spend across a day running one decision every ten seconds — 8,640 decisions — is <code>$0.0026</code> a decision.</p><p>A Grand Prix at real time is roughly 433 decisions, so the agent directs a full race for about <code>$1.14</code> in model calls. Text-to-speech adds a few cents and only when someone turns audio on.</p><p>What that displaces is not quantified here. A broadcast gallery is a room of people and this project has no data on what one costs, so no saving is claimed — only what this side of the comparison actually costs to run.</p>" },
     capture: { eyebrow: "Effectiveness", title: "Overtakes caught",
       body: "<p>A pass shown is a pass kept; a pass missed is gone. So the measure that matters is not latency or uptime — it is what fraction of the position changes in a race the feed was actually watching when they happened.</p><p>Measured across four full races, 764 position changes: this pipeline catches 42-51%. Following the leader, which is what a lazy broadcast does, catches 0-3%. An oracle that knows every pass in advance and still has only one camera and a four-second hold reaches about 90% — so roughly half of everything physically catchable is being caught, with no knowledge of the future.</p><p>Run it yourself: <code>python -m eval.capture_rate --race spa</code></p>" },
     quota: { eyebrow: "Capacity", title: "Model quota",
@@ -852,7 +862,8 @@
 
   function draw() {
     requestAnimationFrame(draw);
-    if (isPhone) return;   // stage is hidden; nothing to paint
+    // Stage is hidden on a phone except in broadcast, where it is the picture.
+    if (isPhone && document.body.getAttribute("data-view") !== "broadcast") return;
     ctx.clearRect(0, 0, W, H);
     if (!outline.length) return;
     var s = latest, cars = interpolated();

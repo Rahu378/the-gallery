@@ -90,6 +90,7 @@ class Orchestrator:
         self._last_pos: dict[str, int] = {}
         self._moment = None
         self._idle_since = None
+        self._decisions = 0
         self.ot_total = 0
         self.ot_caught = 0
 
@@ -407,6 +408,8 @@ class Orchestrator:
         self.state.director_tier = decision.tier
         self.state.director_latency = decision.latency_ms
         metrics.inc("gallery_cuts_total", tier=decision.tier)
+        if decision.tier in ("adk", "genai"):
+            self._decisions += 1
         self._cut_count += 1
         metrics.gauge("gallery_director_latency_ms", decision.latency_ms)
 
@@ -509,6 +512,8 @@ class Orchestrator:
                          "configured": settings.gemini_ready,
                          "mcp": self.director.mcp_ready,
                          "idle": self._idle_since is not None,
+                         "decisions": self._decisions,
+                         "cost": round(self._decisions * settings.cost_per_decision, 4),
                          },
             "grafana": {"live": s.grafana_live, "url": grafana.dashboard_url,
                         "enabled": grafana.enabled,
