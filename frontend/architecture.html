@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Gallery — architecture</title>
+<link rel="stylesheet" href="/static/style.css" />
+<style>
+  body { overflow: auto; }
+  .arch { max-width: 1500px; margin: 0 auto; padding: 34px 30px 50px; }
+  .arch h1 { font-size: 30px; letter-spacing: -.02em; margin: 0 0 6px; }
+  .arch .sub { color: var(--ink-2); font-size: 15px; margin: 0 0 26px; }
+  .band { display: grid; gap: 12px; margin-bottom: 14px; }
+  .band-lab {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .2em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .row3 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; align-items: stretch; }
+  .node {
+    border: 1px solid var(--glass-line); border-radius: var(--radius-sm);
+    background: radial-gradient(120% 140% at 0% 0%, rgba(255,255,255,.05), transparent 60%), var(--panel-2);
+    padding: 14px 15px; box-shadow: var(--shadow);
+  }
+  .node .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 7px; }
+  .node .t { font-size: 16px; font-weight: 600; letter-spacing: -.01em; margin-bottom: 5px; }
+  .node .d { color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
+  .node code { font-family: var(--mono); font-size: 11.5px; color: var(--ink); background: var(--panel-3); padding: 1px 5px; border-radius: 3px; }
+  .node.google { border-color: rgba(0,229,255,.45); }
+  .node.google .k { color: var(--cyan); }
+  .node.partner { border-color: rgba(255,87,34,.45); }
+  .node.partner .k { color: var(--orange); }
+  .node.det .k { color: var(--ink-3); }
+  .flowline { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 6px 0 14px; font-family: var(--mono); font-size: 11px; color: var(--ink-3); letter-spacing: .14em; }
+  .flowline i { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--line), transparent); }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .legend2 { display: flex; gap: 20px; margin-top: 22px; font-family: var(--mono); font-size: 11px; color: var(--ink-3); letter-spacing: .1em; flex-wrap: wrap; }
+  .legend2 b { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  @media (max-width: 1100px) { .row3, .split { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<div class="arch">
+  <h1>The Gallery — how a cut gets made</h1>
+  <p class="sub">Every box below runs at request time. Cyan is Google Cloud, orange is the Grafana partner track, grey is deterministic Python with no model in it.</p>
+
+  <div class="band">
+    <div class="band-lab">Pipeline · one decision</div>
+    <div class="row3">
+      <div class="node det">
+        <div class="k">Source</div>
+        <div class="t">FastF1</div>
+        <div class="d">Real position + timing telemetry. Four 2023 races baked into the image.<br><code>backend/data/source.py</code></div>
+      </div>
+      <div class="node det">
+        <div class="k">Deterministic · 10 Hz</div>
+        <div class="t">Tension scorer</div>
+        <div class="d">19 pairings scored on gap, closing rate, DRS, tyre delta. No model in the loop.<br><code>agents/tension.py</code></div>
+      </div>
+      <div class="node google">
+        <div class="k">Google Cloud</div>
+        <div class="t">Director — Gemini 2.5 Flash</div>
+        <div class="d">Vertex AI via ADK <code>LlmAgent</code> + <code>Runner</code>. Picks the story, writes both commentary voices.<br><code>agents/director.py</code></div>
+      </div>
+      <div class="node det">
+        <div class="k">Deterministic</div>
+        <div class="t">Cut guard</div>
+        <div class="d">Minimum hold, staleness forcing, margin before abandoning a live story.<br><code>agents/cutguard.py</code></div>
+      </div>
+      <div class="node det">
+        <div class="k">Output</div>
+        <div class="t">World feed</div>
+        <div class="d">One shot to the audience, over WebSocket at 10 Hz.<br><code>backend/main.py</code></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flowline"><i></i>every cut also goes both ways to Grafana<i></i></div>
+
+  <div class="split">
+    <div class="node partner">
+      <div class="k">Partner · Grafana — app writes</div>
+      <div class="t">HTTP API + remote write</div>
+      <div class="d">
+        Provisions its own dashboard, installs a <em>battle imminent</em> alert rule, writes every cut onto the race timeline as an annotation, and pushes metrics by Prometheus <code>remote_write</code> — hand-encoded protobuf + snappy, because Grafana Cloud cannot scrape a Cloud Run container.<br>
+        <code>backend/grafana/client.py</code> · <code>remote_write.py</code>
+      </div>
+    </div>
+    <div class="node partner">
+      <div class="k">Partner · Grafana — agent reads</div>
+      <div class="t">MCP server as agent tools</div>
+      <div class="d">
+        Grafana's own <code>mcp-grafana</code> runs in the container and is attached to the director as an ADK <code>McpToolset</code> over stdio. Filtered to three read tools of 73. The agent queries the annotations its own cuts produced.<br>
+        <code>agents/grafana_mcp.py</code>
+      </div>
+    </div>
+  </div>
+
+  <div class="flowline"><i></i>running on<i></i></div>
+
+  <div class="row3">
+    <div class="node google"><div class="k">Google Cloud</div><div class="t">Cloud Run</div><div class="d">1 instance, CPU always on so the race loop survives between requests.</div></div>
+    <div class="node google"><div class="k">Google Cloud</div><div class="t">Vertex AI</div><div class="d">Service account auth — no API key in the deployment.</div></div>
+    <div class="node google"><div class="k">Google Cloud</div><div class="t">Secret Manager</div><div class="d">Grafana tokens mounted at runtime.</div></div>
+    <div class="node google"><div class="k">Google Cloud</div><div class="t">Cloud Build</div><div class="d">Builds the image, bakes in the races.</div></div>
+    <div class="node google"><div class="k">Google Cloud</div><div class="t">Gemini TTS</div><div class="d">Multi-speaker. Two commentary voices, on demand only.</div></div>
+  </div>
+
+  <div class="legend2">
+    <span><b style="background:var(--cyan)"></b>Google Cloud</span>
+    <span><b style="background:var(--orange)"></b>Grafana (partner track)</span>
+    <span><b style="background:var(--ink-3)"></b>Deterministic — no model</span>
+    <span>· 42–51% of overtakes captured vs 3% following the leader · ~$1.14 per race</span>
+  </div>
+</div>
+</body>
+</html>

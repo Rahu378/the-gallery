@@ -194,6 +194,14 @@ async def ws(sock: WebSocket) -> None:
         orch.unsubscribe(q)
 
 
+@app.get("/architecture")
+async def architecture() -> HTMLResponse:
+    """Static architecture diagram, for the submission video."""
+    html = (FRONTEND / "architecture.html").read_text()
+    html = html.replace("/static/style.css", f"/static/style.css?v={ASSET_V}")
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache, must-revalidate"})
+
+
 @app.get("/")
 async def index() -> HTMLResponse:
     html = (FRONTEND / "index.html").read_text()

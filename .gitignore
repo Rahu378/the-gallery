@@ -9,3 +9,11 @@ cache/
 *.log
 grafana-data/
 !cache/.keep
+
+# Recording notes and subtitle track — for making the submission video,
+# not part of the product a judge is reviewing.
+video/
+
+# Editor and scratch files — not part of the product.
+.claude/
+frontend/_thumb.html
