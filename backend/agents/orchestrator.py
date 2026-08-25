@@ -295,8 +295,13 @@ class Orchestrator:
                 # The measure that matters: a pass shown is a pass kept, a pass
                 # missed is gone. Counted live so it is visible without anyone
                 # having to run the evaluation.
-                self.ot_total += 1
-                self.ot_caught += 1 if live else 0
+                # Only score passes the director was awake for. It idles when
+                # nobody is watching, so counting those would credit it with
+                # misses it was never asked to make — and after any quiet spell
+                # the headline number reads 0%, which is worse than useless.
+                if self.watched:
+                    self.ot_total += 1
+                    self.ot_caught += 1 if live else 0
                 self._emit("overtake",
                            f"P{ov['pos']} — {ov['passer']} passes {ov['passed']}"
                            + (" · on air" if live else ""))
